@@ -64,4 +64,20 @@ describe("matchTags", () => {
         const result = matchTags({ tags, tagFilter: undefined })
         expect(result).toBe(true)
     })
+
+    test("should return true when non-key-value tags match", () => {
+        const tags = Tags.from(["active", "courseId=c1"])
+        const tagFilter = Tags.from(["active"])
+
+        const result = matchTags({ tags, tagFilter })
+        expect(result).toBe(true)
+    })
+
+    test("should return false when non-key-value tags do not match", () => {
+        const tags = Tags.from(["inactive", "courseId=c1"])
+        const tagFilter = Tags.from(["active"])
+
+        const result = matchTags({ tags, tagFilter })
+        expect(result).toBe(false)
+    })
 })
