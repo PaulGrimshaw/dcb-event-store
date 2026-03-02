@@ -1,5 +1,5 @@
 const validateTagValues = (values: string[]): void => {
-    const regex = /^[A-Za-z0-9-]+=[A-Za-z0-9-]+$/
+    const regex = /^\S+$/
     values.forEach(val => {
         if (!regex.test(val)) throw new Error(`Invalid tag value: ${val}`)
     })
@@ -32,8 +32,13 @@ export class Tags {
         if (!obj || Object.keys(obj).length === 0)
             throw new Error("Empty object is not valid for fromObj factory method")
 
+        const regex = /^\S+$/
+        Object.entries(obj).forEach(([key, value]) => {
+            if (!key || !regex.test(key)) throw new Error(`Invalid tag key: "${key}"`)
+            if (!value || !regex.test(value)) throw new Error(`Invalid tag value: "${value}" for key "${key}"`)
+        })
+
         const values = Object.keys(obj).map(key => `${key}=${obj[key]}`)
-        validateTagValues(values)
         return new Tags(values)
     }
 
