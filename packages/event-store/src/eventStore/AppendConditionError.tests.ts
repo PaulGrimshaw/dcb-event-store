@@ -6,8 +6,8 @@ import { Tags } from "./Tags"
 
 describe("AppendConditionError", () => {
     const createAppendCondition = (ceiling: number = 1): AppendCondition => ({
-        query: Query.fromItems([{ eventTypes: ["testEvent1"], tags: Tags.createEmpty() }]),
-        expectedCeiling: SequencePosition.create(ceiling)
+        failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.createEmpty() }]),
+        after: SequencePosition.create(ceiling)
     })
 
     test("should be an instance of Error", () => {
@@ -36,16 +36,16 @@ describe("AppendConditionError", () => {
         expect(error.appendCondition).toBe(condition)
     })
 
-    test("should expose the query from the appendCondition", () => {
+    test("should expose failIfEventsMatch from the appendCondition", () => {
         const condition = createAppendCondition()
         const error = new AppendConditionError(condition)
-        expect(error.appendCondition.query).toBe(condition.query)
+        expect(error.appendCondition.failIfEventsMatch).toBe(condition.failIfEventsMatch)
     })
 
-    test("should expose the expectedCeiling from the appendCondition", () => {
+    test("should expose after from the appendCondition", () => {
         const condition = createAppendCondition(5)
         const error = new AppendConditionError(condition)
-        expect(error.appendCondition.expectedCeiling.value).toBe(5)
+        expect(error.appendCondition.after.value).toBe(5)
     })
 
     test("should have a stack trace", () => {
@@ -86,11 +86,11 @@ describe("AppendConditionError", () => {
 
     test("should preserve appendCondition with Query.all()", () => {
         const condition: AppendCondition = {
-            query: Query.all(),
-            expectedCeiling: SequencePosition.create(10)
+            failIfEventsMatch: Query.all(),
+            after: SequencePosition.create(10)
         }
         const error = new AppendConditionError(condition)
-        expect(error.appendCondition.query.isAll).toBe(true)
-        expect(error.appendCondition.expectedCeiling.value).toBe(10)
+        expect(error.appendCondition.failIfEventsMatch.isAll).toBe(true)
+        expect(error.appendCondition.after.value).toBe(10)
     })
 })

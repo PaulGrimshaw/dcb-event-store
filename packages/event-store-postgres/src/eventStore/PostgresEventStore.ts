@@ -7,7 +7,7 @@ import {
     DcbEvent,
     AppendCondition,
     AppendConditionError,
-    EventEnvelope,
+    SequencedEvent,
     ReadOptions,
     Query
 } from "@dcb-es/event-store"
@@ -38,8 +38,8 @@ export class PostgresEventStore implements EventStore {
             )
 
         const evts = Array.isArray(events) ? events : [events]
-        const { query, expectedCeiling } = appendCondition ?? {}
-        const { statement, params } = appendCommand(evts, query, expectedCeiling, this.tableName)
+        const { failIfEventsMatch, after } = appendCondition ?? {}
+        const { statement, params } = appendCommand(evts, failIfEventsMatch, after, this.tableName)
         const result = await this.client.query(statement, params)
         if (result.rowCount === 0) {
             if (appendCondition) throw new AppendConditionError(appendCondition)
@@ -47,7 +47,7 @@ export class PostgresEventStore implements EventStore {
         }
     }
 
-    async *read(query: Query, options?: ReadOptions): AsyncGenerator<EventEnvelope> {
+    async *read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent> {
         yield* this.readInternal({ query, options })
     }
 
@@ -57,7 +57,7 @@ export class PostgresEventStore implements EventStore {
     }: {
         query: Query
         options?: ReadOptions
-    }): AsyncGenerator<EventEnvelope> {
+    }): AsyncGenerator<SequencedEvent> {
         const { sql, params, cursorName } = readSqlWithCursor(query, this.tableName, options)
         await this.client.query(sql, params)
 

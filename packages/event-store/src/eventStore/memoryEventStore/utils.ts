@@ -1,30 +1,28 @@
-import { EventEnvelope } from "../EventStore"
+import { SequencedEvent } from "../EventStore"
 import { SequencePosition } from "../SequencePosition"
 import { matchTags } from "../../eventHandling/matchTags"
 import { QueryItem } from "../Query"
 
 export const isSeqOutOfRange = (
     sequencePosition: SequencePosition,
-    fromSequencePosition: SequencePosition,
+    fromPosition: SequencePosition,
     backwards: boolean | undefined
-) => (backwards ? sequencePosition > fromSequencePosition : sequencePosition < fromSequencePosition)
+) => (backwards ? sequencePosition > fromPosition : sequencePosition < fromPosition)
 
-export const deduplicateEvents = (events: EventEnvelope[]): EventEnvelope[] => {
-    const uniqueEventsMap = new Map<number, EventEnvelope>()
+export const deduplicateEvents = (events: SequencedEvent[]): SequencedEvent[] => {
+    const uniqueEventsMap = new Map<number, SequencedEvent>()
 
     for (const event of events) {
-        if (!uniqueEventsMap.has(event.sequencePosition.value)) {
-            uniqueEventsMap.set(event.sequencePosition.value, event)
+        if (!uniqueEventsMap.has(event.position.value)) {
+            uniqueEventsMap.set(event.position.value, event)
         }
     }
 
     return Array.from(uniqueEventsMap.values())
 }
 
-export const matchesQueryItem = (queryItem: QueryItem, { event }: EventEnvelope) => {
-    //query item does not contain relevant event type
-    if (queryItem.eventTypes && queryItem.eventTypes.length > 0 && !queryItem.eventTypes.includes(event.type))
-        return false
+export const matchesQueryItem = (queryItem: QueryItem, { event }: SequencedEvent) => {
+    if (queryItem.types && queryItem.types.length > 0 && !queryItem.types.includes(event.type)) return false
 
     return matchTags({ tagFilter: queryItem.tags, tags: event.tags })
 }

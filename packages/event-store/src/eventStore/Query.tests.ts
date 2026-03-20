@@ -9,10 +9,10 @@ describe("Query", () => {
 
     test("should create query from valid query items using Query.fromItems", () => {
         const items: QueryItem[] = [
-            { eventTypes: ["click"] },
+            { types: ["click"] },
             {
                 tags: Tags.fromObj({ courseId: "c1" }),
-                eventTypes: ["hover"]
+                types: ["hover"]
             }
         ]
         const query = Query.fromItems(items)
