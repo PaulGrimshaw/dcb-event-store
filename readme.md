@@ -97,18 +97,18 @@ The core interface implemented by both `MemoryEventStore` and `PostgresEventStor
 ```typescript
 interface EventStore {
     append(events: DcbEvent | DcbEvent[], condition?: AppendCondition): Promise<void>
-    read(query: Query, options?: ReadOptions): AsyncGenerator<EventEnvelope>
+    read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent>
 }
 ```
 
-**`append`** -- Atomically persists one or more events. When an `AppendCondition` is provided, the store fails if any events matching the condition's query exist after the specified `expectedCeiling`. Throws on condition violation.
+**`append`** -- Atomically persists one or more events. When an `AppendCondition` is provided, the store fails if any events matching `failIfEventsMatch` exist after the specified position. Throws on condition violation.
 
-**`read`** -- Returns an async generator of **Sequenced Events** (called `EventEnvelope` here) matching the query, filtered by event type and/or tags.
+**`read`** -- Returns an async generator of `SequencedEvent`s matching the query, filtered by event type and/or tags.
 
 ```typescript
 interface ReadOptions {
     backwards?: boolean                     // Read in reverse order
-    fromSequencePosition?: SequencePosition // Start from this position
+    fromPosition?: SequencePosition         // Start from this position
     limit?: number                          // Max events to return
 }
 ```
@@ -131,30 +131,28 @@ interface DcbEvent<
 }
 ```
 
-### EventEnvelope
+### SequencedEvent
 
-A **Sequenced Event** in DCB terminology -- an event combined with the Sequence Position assigned by the store during append.
+An event combined with the Sequence Position assigned by the store during append.
 
 ```typescript
-interface EventEnvelope<T extends DcbEvent = DcbEvent> {
+interface SequencedEvent<T extends DcbEvent = DcbEvent> {
     event: T
     timestamp: Timestamp
-    sequencePosition: SequencePosition
+    position: SequencePosition
 }
 ```
 
 ### AppendCondition
 
-Enforces consistency via query-based optimistic locking. The store fails the append if any events matching `query` exist after `expectedCeiling`.
+Enforces consistency via query-based optimistic locking. The store fails the append if any events matching `failIfEventsMatch` exist after the given position.
 
 ```typescript
 type AppendCondition = {
-    query: Query                       // The query to check for conflicting events
-    expectedCeiling: SequencePosition  // Ignore events at or before this position
+    failIfEventsMatch: Query           // The query to check for conflicting events
+    after: SequencePosition            // Ignore events at or before this position
 }
 ```
-
-This maps to the DCB spec concept of `failIfEventsMatch` (query) with an `after` position (`expectedCeiling`).
 
 ### Tags
 
@@ -189,15 +187,15 @@ const query = Query.all()
 
 // Filtered query -- items are OR'd together
 const query = Query.fromItems([
-    { eventTypes: ["courseWasRegistered"], tags: Tags.fromObj({ courseId: "math-101" }) },
-    { eventTypes: ["studentWasSubscribed"], tags: Tags.fromObj({ courseId: "math-101" }) }
+    { types: ["courseWasRegistered"], tags: Tags.fromObj({ courseId: "math-101" }) },
+    { types: ["studentWasSubscribed"], tags: Tags.fromObj({ courseId: "math-101" }) }
 ])
 ```
 
 ```typescript
 interface QueryItem {
     tags?: Tags           // Events must include all of these tags (subset match)
-    eventTypes?: string[] // Events must be one of these types
+    types?: string[]      // Events must be one of these types
 }
 ```
 
@@ -243,7 +241,7 @@ interface EventHandlerWithState<TEvents extends DcbEvent, TState, TTags extends 
     onlyLastEvent?: boolean     // Declared in the interface but not currently used by buildDecisionModel
     init: TState                // Initial state before any events
     when: {
-        [EventType]: (eventEnvelope: EventEnvelope, state: TState) => TState | Promise<TState>
+        [EventType]: (sequencedEvent: SequencedEvent, state: TState) => TState | Promise<TState>
     }
 }
 ```
@@ -287,7 +285,7 @@ interface EventHandler<TEvents extends DcbEvent, TTags extends Tags = Tags> {
     tagFilter?: Partial<TTags>
     onlyLastEvent?: boolean  // Declared in the interface but not currently used by HandlerCatchup
     when: {
-        [EventType]: (eventEnvelope: EventEnvelope) => void | Promise<void>
+        [EventType]: (sequencedEvent: SequencedEvent) => void | Promise<void>
     }
 }
 ```
@@ -335,7 +333,7 @@ import { MemoryEventStore } from "@dcb-es/event-store"
 const store = new MemoryEventStore()
 
 // Pre-seed with existing Sequenced Events
-const store = new MemoryEventStore(existingEventEnvelopes)
+const store = new MemoryEventStore(existingSequencedEvents)
 
 // Test helpers: register listeners for read/append calls
 store.on("read", () => readCount++)

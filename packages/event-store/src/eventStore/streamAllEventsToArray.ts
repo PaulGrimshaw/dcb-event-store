@@ -1,7 +1,7 @@
-import { EventEnvelope } from "../eventStore/EventStore"
+import { SequencedEvent } from "../eventStore/EventStore"
 
-export const streamAllEventsToArray = async (generator: AsyncGenerator<EventEnvelope>): Promise<EventEnvelope[]> => {
-    const results: EventEnvelope[] = []
+export const streamAllEventsToArray = async (generator: AsyncGenerator<SequencedEvent>): Promise<SequencedEvent[]> => {
+    const results: SequencedEvent[] = []
     let done: boolean | undefined = false
     while (!done) {
         const next = await generator.next()

@@ -10,24 +10,24 @@ export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown
     metadata: Mtdta
 }
 
-export interface EventEnvelope<T extends DcbEvent = DcbEvent> {
+export interface SequencedEvent<T extends DcbEvent = DcbEvent> {
     event: T
     timestamp: Timestamp
-    sequencePosition: SequencePosition
+    position: SequencePosition
 }
 
 export type AppendCondition = {
-    query: Query
-    expectedCeiling: SequencePosition
+    failIfEventsMatch: Query
+    after: SequencePosition
 }
 
 export interface ReadOptions {
     backwards?: boolean
-    fromSequencePosition?: SequencePosition
+    fromPosition?: SequencePosition
     limit?: number
 }
 
 export interface EventStore {
     append: (events: DcbEvent | DcbEvent[], condition?: AppendCondition) => Promise<void>
-    read: (query: Query, options?: ReadOptions) => AsyncGenerator<EventEnvelope>
+    read: (query: Query, options?: ReadOptions) => AsyncGenerator<SequencedEvent>
 }

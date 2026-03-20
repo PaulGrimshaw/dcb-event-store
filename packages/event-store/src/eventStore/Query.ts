@@ -2,7 +2,7 @@ import { Tags } from "./Tags"
 
 export interface QueryItem {
     tags?: Tags
-    eventTypes?: string[]
+    types?: string[]
 }
 
 export class Query {

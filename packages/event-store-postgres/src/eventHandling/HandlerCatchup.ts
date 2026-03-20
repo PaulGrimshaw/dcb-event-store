@@ -53,13 +53,13 @@ export class HandlerCatchup {
             )
 
             const result = Object.keys(handlers).reduce((acc, handlerId) => {
-                const sequencePosition = selectResult.rows.find(
+                const rawPosition = selectResult.rows.find(
                     row => row.handler_id === handlerId
                 )?.last_sequence_position
-                if (sequencePosition !== undefined) {
+                if (rawPosition !== undefined) {
                     return {
                         ...acc,
-                        [handlerId]: SequencePosition.create(parseInt(sequencePosition))
+                        [handlerId]: SequencePosition.create(parseInt(rawPosition))
                     }
                 } else {
                     throw new Error(`Failed to retrieve sequence number for handler ${handlerId}`)
@@ -83,9 +83,9 @@ export class HandlerCatchup {
             .map((_, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::bigint)`)
             .join(", ")
 
-        const updateParams = Object.entries(locks).flatMap(([handlerId, sequencePosition]) => [
+        const updateParams = Object.entries(locks).flatMap(([handlerId, position]) => [
             handlerId,
-            sequencePosition.value
+            position.value
         ])
 
         const updateQuery = `
@@ -105,17 +105,17 @@ export class HandlerCatchup {
         if (!toSequencePosition) {
             const lastEventInStore = (await this.eventStore.read(Query.all(), { backwards: true, limit: 1 }).next())
                 .value
-            toSequencePosition = lastEventInStore?.sequencePosition ?? SequencePosition.zero()
+            toSequencePosition = lastEventInStore?.position ?? SequencePosition.zero()
         }
 
-        const query = Query.fromItems([{ eventTypes: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])
-        for await (const event of this.eventStore.read(query, { fromSequencePosition: currentPosition.inc() })) {
-            if (toSequencePosition && event.sequencePosition.value > toSequencePosition.value) {
+        const query = Query.fromItems([{ types: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])
+        for await (const event of this.eventStore.read(query, { fromPosition: currentPosition.inc() })) {
+            if (toSequencePosition && event.position.value > toSequencePosition.value) {
                 break
             }
             if (handler.when[event.event.type]) await handler.when[event.event.type](event)
 
-            currentPosition = event.sequencePosition
+            currentPosition = event.position
         }
         return currentPosition
     }

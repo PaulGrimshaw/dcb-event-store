@@ -33,17 +33,17 @@ describe("buildDecisionModel", () => {
             })
 
             test("should set the maximum sequence number to 0 in appendCondition", async () => {
-                expect(appendCondition?.expectedCeiling.value).toBe(0)
+                expect(appendCondition?.after.value).toBe(0)
             })
 
-            test("should have a single eventType of 'courseWasRegistered' in appendCondition", async () => {
-                const { eventTypes } = <QueryItem>appendCondition.query.items[0]
-                expect(eventTypes?.length).toBe(1)
-                expect(eventTypes?.[0]).toBe("courseWasRegistered")
+            test("should have a single event type of 'courseWasRegistered' in appendCondition", async () => {
+                const { types } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
+                expect(types?.length).toBe(1)
+                expect(types?.[0]).toBe("courseWasRegistered")
             })
 
             test("should include 'courseId' as a tag in appendCondition", async () => {
-                const { tags } = <QueryItem>appendCondition.query.items[0]
+                const { tags } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
                 expect(Object.keys(tags ?? {}).length).toBe(1)
                 expect(tags?.equals(Tags.fromObj({ courseId: "course-1" }))).toEqual(true)
             })
@@ -72,17 +72,17 @@ describe("buildDecisionModel", () => {
         })
 
         test("should set the maximum sequence number to 1 in appendCondition", async () => {
-            expect(appendCondition?.expectedCeiling.value).toBe(1)
+            expect(appendCondition?.after.value).toBe(1)
         })
 
-        test("should have a single eventType of 'courseWasRegistered' in appendCondition", async () => {
-            const { eventTypes } = <QueryItem>appendCondition.query.items[0]
-            expect(eventTypes?.length).toBe(1)
-            expect(eventTypes?.[0]).toBe("courseWasRegistered")
+        test("should have a single event type of 'courseWasRegistered' in appendCondition", async () => {
+            const { types } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
+            expect(types?.length).toBe(1)
+            expect(types?.[0]).toBe("courseWasRegistered")
         })
 
         test("should include 'courseId' as a tag in appendCondition", async () => {
-            const { tags } = <QueryItem>appendCondition.query.items[0]
+            const { tags } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
             expect(Object.keys(tags ?? {}).length).toBe(1)
             expect(tags?.equals(Tags.fromObj({ courseId: "course-1" }))).toEqual(true)
         })
@@ -115,12 +115,12 @@ describe("buildDecisionModel", () => {
         })
 
         test("should set the maximum sequence number to 2 in appendCondition", async () => {
-            expect(appendCondition?.expectedCeiling.value).toBe(2)
+            expect(appendCondition?.after.value).toBe(2)
         })
 
-        test("should have the 4 correct eventTypes in appendCondition", async () => {
-            const { eventTypes } = <QueryItem>appendCondition.query.items[0]
-            expect(eventTypes?.length).toBe(4)
+        test("should have the 4 correct event types in appendCondition", async () => {
+            const { types } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
+            expect(types?.length).toBe(4)
             expect(
                 [
                     "courseWasRegistered",
@@ -128,11 +128,11 @@ describe("buildDecisionModel", () => {
                     "studentWasUnsubscribed",
                     "studentWasSubscribed"
                 ].sort()
-            ).toEqual(expect.arrayContaining((eventTypes ?? []).sort()))
+            ).toEqual(expect.arrayContaining((types ?? []).sort()))
         })
 
         test("should include 'courseId' as a tag in appendCondition", async () => {
-            const { tags } = <QueryItem>appendCondition.query.items[0]
+            const { tags } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
             expect(Object.keys(tags ?? {}).length).toBe(1)
             expect(tags?.equals(Tags.fromObj({ courseId: "course-1" }))).toBe(true)
         })
@@ -168,12 +168,12 @@ describe("buildDecisionModel", () => {
         })
 
         test("should set the maximum sequence number to 2 in appendCondition", async () => {
-            expect(appendCondition?.expectedCeiling.value).toBe(2)
+            expect(appendCondition?.after.value).toBe(2)
         })
 
-        test("should have the 4 correct eventTypes in appendCondition", async () => {
-            const { eventTypes } = <QueryItem>appendCondition.query.items[0]
-            expect(eventTypes?.length).toBe(4)
+        test("should have the 4 correct event types in appendCondition", async () => {
+            const { types } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
+            expect(types?.length).toBe(4)
             expect(
                 [
                     "courseWasRegistered",
@@ -181,11 +181,11 @@ describe("buildDecisionModel", () => {
                     "studentWasUnsubscribed",
                     "studentWasSubscribed"
                 ].sort()
-            ).toEqual(expect.arrayContaining((eventTypes ?? []).sort()))
+            ).toEqual(expect.arrayContaining((types ?? []).sort()))
         })
 
         test("should include 'courseId' as a tag in appendCondition", async () => {
-            const { tags } = <QueryItem>appendCondition.query.items[0]
+            const { tags } = <QueryItem>appendCondition.failIfEventsMatch.items[0]
             expect(Object.keys(tags ?? {}).length).toBe(1)
             expect(tags?.equals(Tags.fromObj({ courseId: "course-1" }))).toEqual(true)
         })

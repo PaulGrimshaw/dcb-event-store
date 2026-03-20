@@ -1,4 +1,4 @@
-import { DcbEvent, EventEnvelope } from "../eventStore/EventStore"
+import { DcbEvent, SequencedEvent } from "../eventStore/EventStore"
 import { Tags } from "../eventStore/Tags"
 
 export interface EventHandlerWithState<
@@ -11,7 +11,7 @@ export interface EventHandlerWithState<
     init: TState
     when: {
         [E in TEvents as E["type"]]: (
-            eventEnvelope: EventEnvelope<Extract<TEvents, { type: E["type"] }>>,
+            sequencedEvent: SequencedEvent<Extract<TEvents, { type: E["type"] }>>,
             state: TState
         ) => TState | Promise<TState>
     }

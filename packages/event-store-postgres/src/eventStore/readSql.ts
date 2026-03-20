@@ -37,14 +37,14 @@ const tagFilterSnip = (pm: ParamManager, c: QueryItem): string =>
     c.tags && c.tags.length ? `tags && ${pm.add(c.tags.values)}::text[]` : ""
 
 const fromSeqNoFilter = (pm: ParamManager, tableAlias: string, options?: ReadOptions): string =>
-    options?.fromSequencePosition
+    options?.fromPosition
         ? `${tableAlias ? `${tableAlias}.` : ""}sequence_position ${
               options.backwards ? "<=" : ">="
-          } ${pm.add(options.fromSequencePosition.value)}`
+          } ${pm.add(options.fromPosition.value)}`
         : ""
 
 const typesFilter = (c: QueryItem, pm: ParamManager): string =>
-    c.eventTypes?.length ? `type IN (${c.eventTypes.map(t => pm.add(t)).join(", ")})` : ""
+    c.types?.length ? `type IN (${c.types.map(t => pm.add(t)).join(", ")})` : ""
 
 const getFilterString = (c: QueryItem, pm: ParamManager, options?: ReadOptions): string => {
     const filters = [typesFilter(c, pm), tagFilterSnip(pm, c), fromSeqNoFilter(pm, "", options)]

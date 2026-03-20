@@ -1,4 +1,4 @@
-import { AppendCondition, EventEnvelope, EventStore } from "../eventStore/EventStore"
+import { AppendCondition, SequencedEvent, EventStore } from "../eventStore/EventStore"
 import { Query, QueryItem } from "../eventStore/Query"
 import { SequencePosition } from "../eventStore/SequencePosition"
 import { Tags } from "../eventStore/Tags"
@@ -15,23 +15,23 @@ export async function buildDecisionModel<T extends EventHandlers>(
     eventStore: EventStore,
     eventHandlers: T
 ): Promise<{ state: EventHandlerStates<T>; appendCondition: AppendCondition }> {
-    const defaultHandler = (_: EventEnvelope, state: EventHandlerStates<T>) => state
+    const defaultHandler = (_: SequencedEvent, state: EventHandlerStates<T>) => state
     const states = Object.fromEntries(Object.entries(eventHandlers).map(([key, value]) => [key, value.init]))
 
     const queryItems: QueryItem[] = Object.values(eventHandlers).map(proj => ({
         tags: proj.tagFilter as Tags,
-        eventTypes: Object.keys(proj.when) as string[]
+        types: Object.keys(proj.when) as string[]
     }))
 
     if (queryItems.length === 0) {
         throw new Error("Event handlers must have at least one event handler")
     }
 
-    const query = Query.fromItems(queryItems)
+    const failIfEventsMatch = Query.fromItems(queryItems)
 
-    let expectedCeiling = SequencePosition.zero()
-    for await (const eventEnvelope of eventStore.read(query)) {
-        const { event, sequencePosition } = eventEnvelope
+    let after = SequencePosition.zero()
+    for await (const sequencedEvent of eventStore.read(failIfEventsMatch)) {
+        const { event, position } = sequencedEvent
 
         for (const [handlerId, eventHandler] of Object.entries(eventHandlers)) {
             const handlerIsRelevant =
@@ -39,10 +39,10 @@ export async function buildDecisionModel<T extends EventHandlers>(
                 matchTags({ tags: event.tags, tagFilter: eventHandler.tagFilter as Tags })
 
             const handler = handlerIsRelevant ? eventHandler.when[event.type] : defaultHandler
-            states[handlerId] = await handler(eventEnvelope, states[handlerId] as EventHandlerStates<T>)
+            states[handlerId] = await handler(sequencedEvent, states[handlerId] as EventHandlerStates<T>)
         }
-        if (sequencePosition > expectedCeiling) expectedCeiling = sequencePosition
+        if (position > after) after = position
     }
 
-    return { state: states as EventHandlerStates<T>, appendCondition: { query, expectedCeiling } }
+    return { state: states as EventHandlerStates<T>, appendCondition: { failIfEventsMatch, after } }
 }

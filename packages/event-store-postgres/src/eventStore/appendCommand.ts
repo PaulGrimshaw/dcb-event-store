@@ -3,8 +3,8 @@ import { ParamManager, dbEventConverter } from "./utils"
 
 export const appendSql = (
     events: DcbEvent[],
-    query: Query | undefined,
-    expectedCeiling: SequencePosition | undefined,
+    failIfEventsMatch: Query | undefined,
+    after: SequencePosition | undefined,
     tableName: string
 ): { statement: string; params: unknown[] } => {
     const params = new ParamManager()
@@ -27,10 +27,10 @@ export const appendSql = (
 
     // Build filtering clause if needed
     const filterClause = (): string => {
-        if (!query || !expectedCeiling) return ""
-        const maxSeqNoParam = params.add(expectedCeiling.value)
+        if (!failIfEventsMatch || !after) return ""
+        const maxSeqNoParam = params.add(after.value)
 
-        if (query.isAll) {
+        if (failIfEventsMatch.isAll) {
             return `
             WHERE NOT EXISTS (
                 SELECT 1
@@ -41,14 +41,14 @@ export const appendSql = (
 
         return `
             WHERE NOT EXISTS (
-                ${query.items
+                ${failIfEventsMatch.items
                     .map(c => {
                         const conditions = [
                             `tags @> ${params.add(c.tags?.values ?? [])}::text[]`,
                             `sequence_position > ${maxSeqNoParam}::bigint`
                         ]
-                        if (c.eventTypes?.length) {
-                            conditions.unshift(`type IN (${c.eventTypes.map(t => params.add(t)).join(", ")})`)
+                        if (c.types?.length) {
+                            conditions.unshift(`type IN (${c.types.map(t => params.add(t)).join(", ")})`)
                         }
                         return `
                             SELECT 1
