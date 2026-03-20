@@ -147,6 +147,21 @@ describe("DynamoEventStore.read", () => {
             expect(events.every(e => e.event.type === "testEvent1")).toBe(true)
             expect(events.every(e => e.event.tags.values.includes("testTagKey=ev-1"))).toBe(true)
         })
+
+        test("should return events matching type AND multiple tags (AND)", async () => {
+            const events = await streamAllEventsToArray(
+                eventStore.read(
+                    Query.fromItems([{
+                        eventTypes: ["testEvent1"],
+                        tags: Tags.from(["testTagKey=ev-1", "otherTag=shared"])
+                    }])
+                )
+            )
+            expect(events.length).toBe(1)
+            expect(events[0].event.type).toBe("testEvent1")
+            expect(events[0].event.tags.values).toContain("testTagKey=ev-1")
+            expect(events[0].event.tags.values).toContain("otherTag=shared")
+        })
     })
 
     describe("multiple query items (OR logic)", () => {

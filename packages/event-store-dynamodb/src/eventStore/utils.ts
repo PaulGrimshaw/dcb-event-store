@@ -4,8 +4,6 @@ const SEQ_PAD_LENGTH = 16
 
 export const padSeqPos = (pos: number): string => pos.toString().padStart(SEQ_PAD_LENGTH, "0")
 
-export const parseSeqPos = (padded: string): number => parseInt(padded, 10)
-
 export type DynamoEventItem = {
     PK: string
     SK: string
