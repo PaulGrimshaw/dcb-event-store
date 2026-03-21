@@ -2,6 +2,28 @@
 
 DynamoDB implementation of the `EventStore` interface from `@dcb-es/event-store`.
 
+## Summary
+
+`@dcb-es/event-store-dynamodb` provides a fully [DCB-compliant](https://dcb.events) event store backed by AWS DynamoDB. It targets workloads that need fine-grained, entity-level write concurrency without the false conflicts typical of coarser locking strategies.
+
+**How it works in a nutshell:**
+
+- Uses a **single DynamoDB table** with denormalized index items — no GSIs, no eventually-consistent reads on the critical path.
+- Enforces append conditions via **fine-grained pessimistic locks** keyed on `(eventType, tagValue)` pairs, so two writers only conflict when they truly touch the same entity.
+- For small appends (roughly ≤ 40 events), a single **`TransactWriteItems`** call handles locking, sequencing, and writing atomically with zero overhead.
+- For large appends, a **batch-commit protocol** (PENDING → COMMITTED state machine) keeps partial writes invisible until the entire batch is durable.
+- A **global atomic sequence counter** (`_SEQ`) assigns a strict total order to every event; gaps from failed batches are harmless.
+- Reads use an `AsyncGenerator` that streams results page-by-page, handling DynamoDB's 1 MB page limit transparently and with no artificial batch-size ceiling.
+
+**Key constraints imposed by this adapter** (beyond the base `EventStore` interface):
+
+1. Every event must carry **at least one tag**.
+2. Every `QueryItem` inside an `AppendCondition` must have **non-empty `eventTypes` AND non-empty `tags`**.
+
+These constraints allow the adapter to use only `(eventType, tagValue)` pair locks, eliminating type-level or global lock contention. Reads (including `Query.all()`, type-only, and tag-only queries) are **unrestricted**.
+
+**Performance headline:** small transactional appends complete in 5–15 ms; large batch appends of 1,000 events in 100–500 ms; single-entity reads in 1–5 ms. DynamoDB on-demand scales automatically — 10,000+ events/sec is comfortably achievable from a single host.
+
 ## Design Goals
 
 - Full [DCB compliance](https://dcb.events): append conditions that reject writes when new matching events have been added since the caller last read
