@@ -1,4 +1,5 @@
 import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb"
+import { markBatchFailed } from "./batchUtils"
 
 export class LockTimeoutError extends Error {
     constructor(lockKeys: string[]) {
@@ -179,14 +180,11 @@ export function startHeartbeat(
                     )
                 )
             )
-        } catch (e: unknown) {
-            if ((e as { name?: string }).name === "ConditionalCheckFailedException") {
-                stopped = true
-                if (timer) clearInterval(timer)
-                resolveInvalidated()
-                return
-            }
-            throw e
+        } catch {
+            // Any failure (stolen lock, network error, throttle) → signal invalidation
+            stopped = true
+            if (timer) clearInterval(timer)
+            resolveInvalidated()
         }
     }
 
@@ -202,24 +200,3 @@ export function startHeartbeat(
     }
 }
 
-async function markBatchFailed(
-    client: DynamoDBDocumentClient,
-    tableName: string,
-    batchId: string
-): Promise<void> {
-    try {
-        await client.send(
-            new UpdateCommand({
-                TableName: tableName,
-                Key: { PK: `_BATCH#${batchId}`, SK: `_BATCH#${batchId}` },
-                UpdateExpression: "SET #s = :failed",
-                ConditionExpression: "#s = :pending",
-                ExpressionAttributeNames: { "#s": "status" },
-                ExpressionAttributeValues: { ":failed": "FAILED", ":pending": "PENDING" }
-            })
-        )
-    } catch (e: unknown) {
-        if ((e as { name?: string }).name !== "ConditionalCheckFailedException") throw e
-        // Already COMMITTED or FAILED — fine
-    }
-}

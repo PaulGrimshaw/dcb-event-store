@@ -7,7 +7,7 @@ import {
     streamAllEventsToArray,
     Tags
 } from "@dcb-es/event-store"
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb"
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb"
 import { DynamoEventStore } from "./DynamoEventStore"
 import { getTestDynamoTable } from "@test/testDynamoClient"
 
@@ -209,6 +209,49 @@ describe("DynamoEventStore.append", () => {
             expect(events.length).toBe(2)
         })
 
+        test("should lock on event tags not just condition tags", async () => {
+            const eventStore = await createEventStore()
+
+            // Writer A: condition checks scope=shared, event has scope=shared
+            // Writer B: condition checks scope=shared, event has scope=shared
+            // Both share condition AND event lock key — serialized, second sees first's event
+            const tags = Tags.from(["scope=shared"])
+
+            const results = await Promise.allSettled([
+                eventStore.append(new EventType1(tags), {
+                    failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags }]),
+                    after: SequencePosition.zero()
+                }),
+                eventStore.append(new EventType1(tags), {
+                    failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags }]),
+                    after: SequencePosition.zero()
+                })
+            ])
+
+            // Lock serializes them — second writer sees first's committed event
+            const succeeded = results.filter(r => r.status === "fulfilled")
+            expect(succeeded.length).toBe(1)
+
+            // Verify event tags with extra tags also produce locks
+            const eventStore2 = await createEventStore()
+            const multiTags = Tags.from(["entity=X", "extra=Y"])
+
+            // Append with condition on entity=X, event has entity=X+extra=Y
+            // Lock keys should include testEvent1:extra=Y from event tags
+            await eventStore2.append(new EventType1(multiTags), {
+                failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.from(["entity=X"]) }]),
+                after: SequencePosition.zero()
+            })
+
+            // Second writer with condition on extra=Y should fail (event above position 0 exists)
+            await expect(
+                eventStore2.append(new EventType1(multiTags), {
+                    failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.from(["extra=Y"]) }]),
+                    after: SequencePosition.zero()
+                })
+            ).rejects.toThrow(AppendConditionError)
+        })
+
         test("should succeed with condition after position of existing matching events", async () => {
             const eventStore = await createEventStore()
             const tags = Tags.from(["course=CS606"])
@@ -325,6 +368,39 @@ describe("DynamoEventStore.append", () => {
             const watermark = await getWatermark(client, tableName)
             expect(watermark).toBeDefined()
             expect(watermark).toBeGreaterThan(0)
+        })
+
+        test("should hold watermark back when PENDING batches exist", async () => {
+            const { store, client, tableName } = await createEventStoreWithClient()
+
+            // Create a fake PENDING batch with a known seqStart to simulate an in-flight writer
+            const fakeBatchId = crypto.randomUUID()
+            await client.send(
+                new PutCommand({
+                    TableName: tableName,
+                    Item: {
+                        PK: `_BATCH#${fakeBatchId}`,
+                        SK: `_BATCH#${fakeBatchId}`,
+                        status: "PENDING",
+                        createdAt: Date.now(),
+                        seqStart: 5,
+                        seqEnd: 10
+                    }
+                })
+            )
+
+            // Now commit a real conditional append (will get positions above the fake batch)
+            const tags = Tags.from(["wm=pending-test"])
+            const condition: AppendCondition = {
+                failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags }]),
+                after: SequencePosition.zero()
+            }
+            await store.append(new EventType1(tags), condition)
+
+            // Watermark should be held back to min(seqStart)-1 = 4
+            const watermark = await getWatermark(client, tableName)
+            expect(watermark).toBeDefined()
+            expect(watermark).toBeLessThanOrEqual(4)
         })
 
         test("should only advance watermark forward (concurrent commits)", async () => {

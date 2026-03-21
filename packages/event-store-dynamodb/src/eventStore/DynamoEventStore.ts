@@ -14,13 +14,13 @@ import {
     AppendConditionError,
     SequencedEvent,
     ReadOptions,
-    Query,
-    Tags
+    Query
 } from "@dcb-es/event-store"
 import { buildWriteBatch, DynamoEventItem, DynamoPointerItem, chunk, padSeqPos } from "./utils"
 import { ensureInstalled } from "./ensureInstalled"
 import { readFromDynamo } from "./readDynamo"
 import { acquireLocks, releaseLocks, startHeartbeat, HeartbeatHandle } from "./lockManager"
+import { markBatchFailed } from "./batchUtils"
 
 const MAX_BATCH_WRITE_RETRIES = 5
 const DEFAULT_LEASE_MS = 30_000
@@ -120,7 +120,7 @@ export class DynamoEventStore implements EventStore {
         } catch (error) {
             // Cleanup on any error
             heartbeat?.stop()
-            await this.markBatchFailed(batchId)
+            await markBatchFailed(this.client, this.tableName, batchId)
             await releaseLocks(this.client, this.tableName, lockKeys, batchId)
             throw error
         }
@@ -273,23 +273,6 @@ export class DynamoEventStore implements EventStore {
         } catch (e: unknown) {
             if ((e as { name?: string }).name !== "ConditionalCheckFailedException") throw e
             // Another committer already advanced further — fine
-        }
-    }
-
-    private async markBatchFailed(batchId: string): Promise<void> {
-        try {
-            await this.client.send(
-                new UpdateCommand({
-                    TableName: this.tableName,
-                    Key: { PK: `_BATCH#${batchId}`, SK: `_BATCH#${batchId}` },
-                    UpdateExpression: "SET #s = :failed",
-                    ConditionExpression: "#s = :pending",
-                    ExpressionAttributeNames: { "#s": "status" },
-                    ExpressionAttributeValues: { ":failed": "FAILED", ":pending": "PENDING" }
-                })
-            )
-        } catch {
-            // Already COMMITTED or FAILED — fine
         }
     }
 
