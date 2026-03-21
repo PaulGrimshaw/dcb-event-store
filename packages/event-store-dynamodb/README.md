@@ -175,6 +175,43 @@ This single write atomically:
 
 **No explicit lock release step.** When the next writer encounters a lock pointing to this batch, it reads the batch record, sees `COMMITTED`, and immediately steals the lock.
 
+### Out-of-Order Commit Visibility (Batch Path) — WIP
+
+> **Status: Work in progress.** This section documents a known issue with a proposed mitigation. Implementation is tracked in #44.
+
+On the batch/lock path, two concurrent writers can reserve sequence ranges independently and commit in different order:
+
+```
+Client A: reserves positions 1-10
+Client B: reserves positions 11-20
+Client B: commits → events 11-20 visible
+           ⏳ Client A still writing
+Client A: commits → events 1-10 visible
+```
+
+Between B's commit and A's commit, events 1-10 are invisible. When A commits, they appear with lower positions — "back in time."
+
+**Impact by consumer type:**
+
+| Consumer | Impact | Why |
+|----------|--------|-----|
+| Append conditions | **Safe** | Condition check reads only COMMITTED events inside locks. PENDING events are invisible. Events appearing later with lower positions are below the observed position — they don't violate any condition. |
+| Decision models | **Safe** | Same reasoning — the decision was made on the visible state, and the condition validates it. |
+| Projections | **Can miss events** | A projection reading `Query.all()` sees events 11-20, checkpoints at position 20. Events 1-10 appear later but the projection starts from 21 next time — positions 1-10 are permanently skipped. |
+
+**The transactional path is not affected** — `TransactWriteItems` atomically reserves the sequence range and writes the events in a single operation, so events always become visible in sequence order.
+
+**Proposed mitigation: `_COMMITTED_THROUGH` watermark.** The batch records already store `seqStart` and `seqEnd`. On commit, the adapter queries for PENDING batches:
+
+```
+1. Commit batch (set status = COMMITTED)
+2. Query PENDING batches → find min(seqStart) across all PENDING
+3. If no PENDING batches: set _COMMITTED_THROUGH = _SEQ (current max)
+4. If PENDING batches exist: set _COMMITTED_THROUGH = min(seqStart) - 1
+```
+
+Projections use `_COMMITTED_THROUGH` as their safe resume position — everything up to that position is visible and stable, nothing will appear below it later. No new table items or schema changes needed — the batch records already have the range data.
+
 ### Optimisation: Small Appends (Transactional Path)
 
 For appends where the total item count fits within `TransactWriteItems`' 100-item limit (~40 events depending on tag count), use a **single transaction** instead:
@@ -499,6 +536,7 @@ The most likely hot key is `_SEQ`. If this becomes a bottleneck at extreme scale
 
 ## Open Questions
 
+- **Out-of-order batch commits (WIP)**: On the batch/lock path, concurrent writers can commit in different order than they reserved sequence ranges, causing events to appear "back in time." Safe for append conditions and decision models, but projections can miss events. Proposed fix: `_COMMITTED_THROUGH` watermark derived from batch records. See [Out-of-Order Commit Visibility](#out-of-order-commit-visibility-batch-path--wip) section. To be implemented in #44.
 - **Cleanup threshold**: How long a PENDING batch must exist before the cleanup process marks it FAILED. Likely 30-60 seconds. This only affects crash recovery — the hot path never checks batch age.
 - **Cleanup implementation**: Options include a CloudWatch-scheduled Lambda, an application startup hook, or a DynamoDB Streams trigger. Could also run lazily — when a writer encounters a PENDING lock, it notifies the cleanup process.
 - **Orphaned event deletion**: Events from FAILED batches are invisible to readers but still consume storage. Cleanup can optionally delete them (identifiable by `batchId`). Not urgent — they're inert.
