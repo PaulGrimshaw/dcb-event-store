@@ -17,6 +17,9 @@ import { ensureInstalled } from "./ensureInstalled"
 import { readFromDynamo } from "./readDynamo"
 
 const MAX_BATCH_WRITE_RETRIES = 5
+const BATCH_WRITE_SIZE = 25
+const BACKOFF_BASE_MS = 100
+const MAX_BACKOFF_MS = 5_000
 
 export class DynamoEventStore implements EventStore {
     constructor(
@@ -54,15 +57,17 @@ export class DynamoEventStore implements EventStore {
     }
 
     private async initSequenceCounter(): Promise<void> {
-        await this.client.send(
-            new PutCommand({
-                TableName: this.tableName,
-                Item: { PK: "_SEQ", SK: "_SEQ", value: 0 },
-                ConditionExpression: "attribute_not_exists(PK)"
-            })
-        ).catch(e => {
-            if (e.name !== "ConditionalCheckFailedException") throw e
-        })
+        try {
+            await this.client.send(
+                new PutCommand({
+                    TableName: this.tableName,
+                    Item: { PK: "_SEQ", SK: "_SEQ", value: 0 },
+                    ConditionExpression: "attribute_not_exists(PK)"
+                })
+            )
+        } catch (e: unknown) {
+            if ((e as { name?: string }).name !== "ConditionalCheckFailedException") throw e
+        }
     }
 
     private async reserveSequenceRange(count: number): Promise<number> {
@@ -81,7 +86,7 @@ export class DynamoEventStore implements EventStore {
 
     private async batchWriteItems(items: (DynamoEventItem | DynamoPointerItem)[]): Promise<void> {
         await Promise.all(
-            chunk(items, 25).map(async batch => {
+            chunk(items, BATCH_WRITE_SIZE).map(async batch => {
                 const requestItems = batch.map(item => ({
                     PutRequest: { Item: item }
                 }))
@@ -97,9 +102,11 @@ export class DynamoEventStore implements EventStore {
                 let retries = 0
                 while (unprocessed?.[this.tableName]?.length && retries < MAX_BATCH_WRITE_RETRIES) {
                     retries++
-                    await new Promise(resolve => setTimeout(resolve, Math.min(100 * 2 ** retries, 5000)))
+                    await new Promise(resolve =>
+                        setTimeout(resolve, Math.min(BACKOFF_BASE_MS * 2 ** retries, MAX_BACKOFF_MS))
+                    )
                     const result = await this.client.send(
-                        new BatchWriteCommand({ RequestItems: unprocessed as Record<string, any> })
+                        new BatchWriteCommand({ RequestItems: unprocessed! })
                     )
                     unprocessed = result.UnprocessedItems
                 }
