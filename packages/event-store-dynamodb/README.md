@@ -32,17 +32,17 @@ If your domain requires a type-level constraint (e.g. "count all CourseCreated e
 
 // Lock: _LOCK#CourseCreated:courseIndex=global
 // Serializes all course creation — which is the real domain constraint.
-// Does not affect AssetCreated, CourseUpdated, or any other event type.
+// Does not affect StudentEnrolled, CourseUpdated, or any other event type.
 ```
 
 **Reads are unrestricted.** `Query.all()`, type-only queries, and tag-only queries all work for reads and projections. The constraints only apply to append conditions.
 
 ```typescript
 // All valid reads:
-eventStore.read(Query.all())                                             // full catch-up
-eventStore.read(Query.all(), { fromSequencePosition: pos })              // resume projection
-eventStore.read(Query.fromItems([{ eventTypes: ["CourseCreated"] }]))     // type-only read
-eventStore.read(Query.fromItems([{ tags: Tags.from(["asset=123"]) }]))   // tag-only read
+eventStore.read(Query.all())                                                // full catch-up
+eventStore.read(Query.all(), { fromSequencePosition: pos })                 // resume projection
+eventStore.read(Query.fromItems([{ eventTypes: ["CourseCreated"] }]))        // type-only read
+eventStore.read(Query.fromItems([{ tags: Tags.from(["course=CS101"]) }]))   // tag-only read
 
 // Appending without a condition — no constraints, no locks:
 eventStore.append(events)
@@ -66,7 +66,7 @@ This gives us the DCB guarantee: the event store verifies that no new events mat
 
 We considered optimistic approaches using watermark items (tracking max sequence per event type or tag). These work but:
 
-- **Type-level watermarks** cause false conflicts when two writers append the same event type for different entities (e.g. `AssetCreated` for asset 123 vs asset 456)
+- **Type-level watermarks** cause false conflicts when two writers append the same event type for different entities (e.g. `CourseCreated` for course CS101 vs course CS102)
 - **Fine-grained `(type, tagValue)` watermarks** require updating all relevant watermarks inside a `TransactWriteItems` call, which is limited to 100 items — problematic for large batch appends
 
 The pessimistic lock approach avoids both issues: locks are fine-grained (no false conflicts between different entities), and the actual event writes use unlimited `BatchWriteItem` calls outside any transaction.
@@ -85,13 +85,13 @@ The batch record is the **source of truth** for whether a set of locks is still 
 
 The lock key set is the **union** of keys derived from the append condition's query and the events being written. Both sources generate the same key type: `_LOCK#<eventType>:<tagValue>`.
 
-For a query item `{ eventTypes: [A, B], tags: [x=1] }` and events of type A with tags `[x=1, y=2]`:
+For a query item `{ eventTypes: [CourseCreated, StudentEnrolled], tags: [course=CS101] }` and events of type `CourseCreated` with tags `[course=CS101, semester=fall]`:
 
 ```
 Lock keys (sorted, to prevent deadlocks):
-  _LOCK#A:x=1     (from condition: type A × tag x=1)
-  _LOCK#A:y=2     (from event: type A × tag y=2)
-  _LOCK#B:x=1     (from condition: type B × tag x=1)
+  _LOCK#CourseCreated:course=CS101       (from condition + event)
+  _LOCK#CourseCreated:semester=fall      (from event)
+  _LOCK#StudentEnrolled:course=CS101     (from condition)
 ```
 
 Lock key derivation is the **cartesian product of types × tags** from both the condition query items and the events being written, deduplicated and sorted.
@@ -103,7 +103,7 @@ All lock acquisitions fire as **parallel `UpdateItem` calls**. Each lock item st
 **Fast path — lock not held (or lock item doesn't exist yet):**
 
 ```
-UpdateItem { PK: "_LOCK#AssetCreated:asset=123" }
+UpdateItem { PK: "_LOCK#StudentEnrolled:course=CS101" }
   SET batchId = :myBatchId
   CONDITION: attribute_not_exists(batchId)
 ```
@@ -250,7 +250,7 @@ On the **happy path** (no crashes), there is never a wait for cleanup. Lock rele
 
 ### Single Table, No GSIs
 
-All indexes are denormalized items in the main table. This is critical because **GSI reads are always eventually consistent** they cannot be used for the strongly consistent condition check inside locks.
+All indexes are denormalized items in the main table. This is critical because **GSI reads are always eventually consistent** — they cannot be used for the strongly consistent condition check inside locks.
 
 | Item type | PK | SK | Data |
 |-----------|----|----|------|
@@ -304,17 +304,17 @@ Trade-off: each event's data payload is stored `2 * tags + 3` times. For events 
 
 ### Write Amplification
 
-For an event of type `AssetCreated` with tags `[asset=123, location=NYC]`:
+For a `StudentEnrolled` event with tags `[course=CS101, student=STU42]`:
 
 ```
-PK                             | SK               | Purpose
-E#501                          | E                | Primary record (source of truth)
-I#AssetCreated#asset=123       | 00000000501      | Type+tag index (condition checks + reads)
-I#AssetCreated#location=NYC    | 00000000501      | Type+tag index (condition checks + reads)
-IT#AssetCreated                | 00000000501      | Type-only read index
-IG#asset=123                   | 00000000501      | Tag-only read index
-IG#location=NYC                | 00000000501      | Tag-only read index
-A#0                            | 00000000501      | All-events bucket
+PK                                    | SK               | Purpose
+E#501                                 | E                | Primary record (source of truth)
+I#StudentEnrolled#course=CS101        | 00000000501      | Type+tag index (condition checks + reads)
+I#StudentEnrolled#student=STU42       | 00000000501      | Type+tag index (condition checks + reads)
+IT#StudentEnrolled                    | 00000000501      | Type-only read index
+IG#course=CS101                       | 00000000501      | Tag-only read index
+IG#student=STU42                      | 00000000501      | Tag-only read index
+A#0                                   | 00000000501      | All-events bucket
 ```
 
 **7 items per event** (with 2 tags). Formula: `1 + tags + 1 + tags + 1 = 2 * tags + 3`.
@@ -339,8 +339,8 @@ Every index item stores the same event attributes. The shared schema:
 {
   PK: string,                // Partition key (varies by item type)
   SK: string,                // Sort key (seqPos, zero-padded)
-  type: string,              // Event type (e.g. "AssetCreated")
-  tags: string[],            // All tags as StringSet (e.g. ["asset=123", "location=NYC"])
+  type: string,              // Event type (e.g. "StudentEnrolled")
+  tags: string[],            // All tags as StringSet (e.g. ["course=CS101", "student=STU42"])
   data: Record<string, any>, // Event payload (Map)
   metadata: Record<string, any>, // Event metadata (Map)
   timestamp: string,         // ISO 8601 UTC
@@ -365,25 +365,25 @@ The `seqPos` attribute is stored as a Number in addition to being encoded in the
 
 ### Multi-Tag Query Mechanics
 
-When a QueryItem has multiple tags (e.g. `tags: [asset=123, location=NYC]`), the adapter picks **one tag** for the partition key and filters the rest client-side:
+When a QueryItem has multiple tags (e.g. `tags: [course=CS101, semester=fall]`), the adapter picks **one tag** for the partition key and filters the rest client-side:
 
 ```
-QueryItem: { eventTypes: ["AssetCreated"], tags: [asset=123, location=NYC] }
+QueryItem: { eventTypes: ["StudentEnrolled"], tags: [course=CS101, semester=fall] }
 
-→ DynamoDB Query: PK = "I#AssetCreated#asset=123", SK >= 0
-→ Client-side filter: event.tags contains "location=NYC"
+→ DynamoDB Query: PK = "I#StudentEnrolled#course=CS101", SK >= 0
+→ Client-side filter: event.tags contains "semester=fall"
 → Result: events matching ALL criteria
 ```
 
-**Which tag to pick?** In DCB patterns, tags are typically entity identifiers (`asset=123`, `course=CS101`) which are highly selective — usually a handful of events per entity. The adapter should pick the **first tag** in the QueryItem's tag list. Callers can optimise by ordering their most selective tag first, but in practice any entity-level tag will be selective enough that the client-side filter discards very little.
+**Which tag to pick?** In DCB patterns, tags are typically entity identifiers (`course=CS101`, `student=STU42`) which are highly selective — usually a handful of events per entity. The adapter should pick the **first tag** in the QueryItem's tag list. Callers can optimise by ordering their most selective tag first, but in practice any entity-level tag will be selective enough that the client-side filter discards very little.
 
 For a QueryItem with **multiple event types** and a tag, the adapter runs one query per type and merges:
 
 ```
-QueryItem: { eventTypes: ["AssetCreated", "AssetUpdated"], tags: [asset=123] }
+QueryItem: { eventTypes: ["CourseCreated", "StudentEnrolled"], tags: [course=CS101] }
 
-→ Query 1: PK = "I#AssetCreated#asset=123"
-→ Query 2: PK = "I#AssetUpdated#asset=123"
+→ Query 1: PK = "I#CourseCreated#course=CS101"
+→ Query 2: PK = "I#StudentEnrolled#course=CS101"
 → Merge by seqPos, deduplicate, sort
 ```
 
@@ -395,8 +395,8 @@ Multiple QueryItems in a single Query are combined with OR semantics, matching t
 
 ```typescript
 Query.fromItems([
-  { eventTypes: ["AssetCreated"], tags: Tags.from(["asset=123"]) },
-  { eventTypes: ["LocationChanged"], tags: Tags.from(["location=NYC"]) }
+  { eventTypes: ["CourseCreated"], tags: Tags.from(["course=CS101"]) },
+  { eventTypes: ["StudentEnrolled"], tags: Tags.from(["student=STU42"]) }
 ])
 ```
 
@@ -445,7 +445,7 @@ The append condition check uses the `I#` (type+tag) index items with **strongly 
 
 ```
 Query:
-  PK = "I#AssetCreated#asset=123"
+  PK = "I#StudentEnrolled#course=CS101"
   SK > "00000000500"    (last observed position)
   ConsistentRead: true
   Limit: 1              (only need to know if ANY exist)
@@ -453,16 +453,16 @@ Query:
 
 Single query, returns 0 or 1 item. If 1 → matching events found, append is rejected.
 
-For a condition with multiple QueryItems, each is checked independently. If **any** QueryItem finds a matching event above the ceiling, the entire append is rejected. These checks can run in parallel.
+For a condition with multiple QueryItems, each is checked independently. If **any** QueryItem finds a matching event above the last observed position, the entire append is rejected. These checks can run in parallel.
 
-For a QueryItem with multiple tags (e.g. `tags: [asset=123, location=NYC]`), the same tag-picking strategy applies: query one tag's `I#` partition, filter the rest. The check remains conservative — if the `I#` partition has events above the ceiling that don't match the additional tags, the check still passes (no false rejections from the filter).
+For a QueryItem with multiple tags (e.g. `tags: [course=CS101, semester=fall]`), the same tag-picking strategy applies: query one tag's `I#` partition, filter the rest. The check remains conservative — if the `I#` partition has events above the last observed position that don't match the additional tags, the check still passes (no false rejections from the filter).
 
 ### Strongly Consistent vs Eventually Consistent Reads
 
 | Operation | Consistency | Why |
 |-----------|-------------|-----|
 | Condition check (inside lock) | **Strong** | Must see all committed events to enforce the DCB guarantee. A stale read could miss a concurrent write and allow a conflicting append. |
-| Decision model read (before append) | **Eventual OK** | The append condition catches any events missed by a stale read. An eventually consistent read just means a slightly older ceiling, not a correctness issue. |
+| Decision model read (before append) | **Eventual OK** | The append condition catches any events missed by a stale read. An eventually consistent read just means a slightly older position, not a correctness issue. |
 | Projection / read model catch-up | **Eventual OK** | Projections are inherently asynchronous. Eventually consistent reads cost half the RCU. |
 | Batch status check | **Strong** | Must see the current batch status to correctly filter events. A stale read could show a PENDING batch as COMMITTED (unlikely but possible if the batch just committed). |
 
@@ -503,6 +503,6 @@ The most likely hot key is `_SEQ`. If this becomes a bottleneck at extreme scale
 - **Cleanup implementation**: Options include a CloudWatch-scheduled Lambda, an application startup hook, or a DynamoDB Streams trigger. Could also run lazily — when a writer encounters a PENDING lock, it notifies the cleanup process.
 - **Orphaned event deletion**: Events from FAILED batches are invisible to readers but still consume storage. Cleanup can optionally delete them (identifiable by `batchId`). Not urgent — they're inert.
 - **Tag selectivity heuristics**: When a QueryItem has multiple tags, the adapter picks one for the partition key lookup. Currently proposed: use the first tag. Could evolve to maintain tag cardinality statistics for smarter selection — but this is an optimisation, not a correctness concern.
-- **Events with many tags**: Write amplification scales as `2 * tags + 3` items per event. Events with 10+ tags produce 23+ items. Acceptable for DynamoDB throughput but worth monitoring for cost. Consider whether domain modelling can reduce tag count (e.g. a composite tag `asset-location=123-NYC` instead of two separate tags, where the combined value is the natural consistency boundary).
+- **Events with many tags**: Write amplification scales as `2 * tags + 3` items per event. Events with 10+ tags produce 23+ items. Acceptable for DynamoDB throughput but worth monitoring for cost. Consider whether domain modelling can reduce tag count (e.g. a composite tag `course-semester=CS101-fall` instead of two separate tags, where the combined value is the natural consistency boundary).
 - **Large event payloads**: Full data duplication means each event's `data` field is stored `2 * tags + 3` times. For events with payloads exceeding ~50KB, consider storing the payload in S3 and referencing it by key in the event data. The 400KB DynamoDB item size limit is a hard ceiling.
 - **Sequence counter sharding**: The single `_SEQ` item supports ~1,000 increments/sec. If append throughput exceeds this (rare), the counter can be sharded: multiple counter items each managing a disjoint range, with writers randomly picking a shard. This breaks the total ordering guarantee within concurrent appends but maintains ordering within each append — acceptable if downstream consumers handle out-of-order delivery. Defer until measured as a bottleneck.
