@@ -1,5 +1,4 @@
 import { NumericPosition } from "./NumericPosition"
-import { NumericPositionDeserializer } from "./NumericPositionDeserializer"
 import { SequencePosition } from "./SequencePosition"
 
 class ForeignPosition extends SequencePosition {
@@ -102,18 +101,16 @@ describe("NumericPosition", () => {
         })
     })
 
-    describe("NumericPositionDeserializer", () => {
-        const deserializer = new NumericPositionDeserializer()
-
-        test("should round-trip through toString and deserialize", () => {
+    describe("parse", () => {
+        test("should round-trip through toString and parse", () => {
             const original = new NumericPosition(42)
-            const restored = deserializer.deserialize(original.toString())
+            const restored = NumericPosition.parse(original.toString())
             expect(restored.equals(original)).toBe(true)
         })
 
         test("should round-trip zero", () => {
             const original = new NumericPosition(0)
-            const restored = deserializer.deserialize(original.toString())
+            const restored = NumericPosition.parse(original.toString())
             expect(restored.equals(original)).toBe(true)
         })
     })

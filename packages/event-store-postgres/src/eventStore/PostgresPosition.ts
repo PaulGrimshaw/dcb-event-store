@@ -26,4 +26,8 @@ export class PostgresPosition extends SequencePosition {
     toString(): string {
         return String(this.value)
     }
+
+    static parse(raw: string): PostgresPosition {
+        return new PostgresPosition(parseInt(raw, 10))
+    }
 }

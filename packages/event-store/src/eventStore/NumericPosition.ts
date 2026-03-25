@@ -26,4 +26,8 @@ export class NumericPosition extends SequencePosition {
     toString(): string {
         return String(this.value)
     }
+
+    static parse(raw: string): NumericPosition {
+        return new NumericPosition(parseInt(raw, 10))
+    }
 }

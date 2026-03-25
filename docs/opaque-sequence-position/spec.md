@@ -29,7 +29,7 @@ Any adapter not backed by a sequential integer (e.g. DynamoDB, issue #38) cannot
 - Adapter-agnostic code can compare and serialise positions without knowing the concrete type.
 - Each adapter owns its own concrete position class. No cross-adapter dependency.
 - `AppendCondition.after` is optional per the [dcb.events spec](https://dcb.events/specification/). Omitting it means "fail if any matching event exists".
-- Positions are serialisable via `toString()` and reconstructable via `PositionDeserializer`.
+- Positions are serialisable via `toString()` (on the abstract class) and reconstructable via a static `parse` method on each concrete class.
 - `ReadOptions.afterPosition` has exclusive semantics, consistent with `AppendCondition.after`.
 
 **Constraints:**
@@ -45,7 +45,7 @@ Any adapter not backed by a sequential integer (e.g. DynamoDB, issue #38) cannot
 
 **Why an abstract class:** `EventStore` is a port. Projection catch-up handlers, API handlers answering "has the read model caught up?", `buildDecisionModel` — all adapter-agnostic code that needs comparison and serialisation without knowing the concrete type.
 
-**Hybrid serialisation.** `toString()` on the position for encoding. `PositionDeserializer` (a separate interface) for decoding. The deserializer is adapter-specific and injected at the composition root, independently of the store.
+**Serialisation.** `toString()` on the abstract class for encoding (adapter-agnostic). Static `parse(raw)` on each concrete class for decoding (adapter-specific — the caller knows which adapter is in use at the composition root).
 
 **Optional `after`.** Aligns with the [dcb.events spec](https://dcb.events/specification/), which states an append condition MAY contain an `after` position. `buildDecisionModel` starts with `after = undefined` and sets it as events are seen — no sentinel needed.
 
@@ -65,16 +65,6 @@ export abstract class SequencePosition {
     abstract toString(): string
 }
 ```
-
-### PositionDeserializer
-
-```typescript
-export interface PositionDeserializer {
-    deserialize(raw: string): SequencePosition
-}
-```
-
-Each adapter provides its own implementation. Injected at the composition root, independently of the store.
 
 ### AppendCondition
 
@@ -139,33 +129,24 @@ class NumericPosition extends SequencePosition {
     toString(): string {
         return String(this.value)
     }
-}
-```
 
-The `instanceof` guard makes mixed-type comparison a loud failure. Arithmetic (`value + 1`) is performed on `.value` inside each adapter — not exposed through the abstract class.
-
-The Postgres adapter defines its own structurally identical position class (`PostgresPosition`). This intentional duplication severs the cross-package dependency. See Alternatives Considered.
-
-### NumericPositionDeserializer
-
-```typescript
-class NumericPositionDeserializer implements PositionDeserializer {
-    deserialize(raw: string): SequencePosition {
+    static parse(raw: string): NumericPosition {
         return new NumericPosition(parseInt(raw, 10))
     }
 }
 ```
+
+The `instanceof` guard makes mixed-type comparison a loud failure. Arithmetic (`value + 1`) is performed on `.value` inside each adapter — not exposed through the abstract class. The static `parse` method handles deserialisation — callers at the composition root know which concrete class they're using.
+
+The Postgres adapter defines its own structurally identical position class (`PostgresPosition`) with its own `parse`. This intentional duplication severs the cross-package dependency. See Alternatives Considered.
 
 ### Package Placement
 
 | Class | Package | Exported? |
 |---|---|---|
 | `SequencePosition` | `@dcb-es/event-store` | Yes |
-| `PositionDeserializer` | `@dcb-es/event-store` | Yes |
 | `NumericPosition` | `@dcb-es/event-store` | No — internal to `MemoryEventStore` |
-| `NumericPositionDeserializer` | `@dcb-es/event-store` | No — internal |
 | `PostgresPosition` | `@dcb-es/event-store-postgres` | No — internal |
-| `PostgresPositionDeserializer` | `@dcb-es/event-store-postgres` | Yes — needed at composition root for deserialisation |
 
 ### buildDecisionModel
 
@@ -189,7 +170,7 @@ When `after` is present, the adapter uses it to scope the check (e.g. `WHERE seq
 1. Command handler appends event, receives position
 2. API returns position.toString() to frontend (e.g. "42")
 3. Frontend polls: GET /readmodel?afterPosition=42
-4. API deserialises: positionDeserializer.deserialize("42")
+4. API parses: PostgresPosition.parse("42")
 5. API checks: projection.currentPosition.isAfter(requestedPosition)
 6. If true, return read model; otherwise wait/retry
 ```
@@ -222,13 +203,16 @@ Rejected: leaks the representation. Callers would treat the comparable value as 
 Rejected: exists only to bootstrap `buildDecisionModel`. Optional `after` per the dcb.events spec is simpler and keeps the store interface minimal.
 
 **Full codec pattern (encode + decode in one type)**
-Rejected: encoding belongs on the position (`toString()`). A combined codec adds indirection for no benefit. The hybrid (`toString` + `PositionDeserializer`) is more ergonomic.
+Rejected: encoding belongs on the position (`toString()`). A combined codec adds indirection for no benefit.
+
+**Separate `PositionDeserializer` interface**
+Rejected: overkill. The caller at the composition root already knows the concrete type, so a static `parse` method on the concrete class is simpler — no extra interface, no injection wiring.
 
 **`parsePosition` on `EventStore`**
-Rejected: deserialisation is not a store concern. A separate `PositionDeserializer` can be used in contexts without a store reference. Keeps the store interface minimal.
+Rejected: deserialisation is not a store concern. A static `parse` on the concrete class is simpler and keeps the store interface minimal.
 
-**`toString()` / `fromString()` both on the type**
-Rejected: `fromString` needs a static factory, which can't know the subclass to construct. The hybrid approach avoids this.
+**`toString()` / `fromString()` both on the abstract class**
+Rejected: `fromString` as a static on the abstract class can't know which subclass to construct. Static `parse` on each concrete class avoids this.
 
 ---
 
@@ -248,17 +232,14 @@ Rejected: `fromString` needs a static factory, which can't know the subclass to 
 packages/event-store/
   src/eventStore/
     SequencePosition.ts              ← abstract class
-    PositionDeserializer.ts          ← interface
-    NumericPosition.ts               ← internal; NOT in index.ts
-    NumericPositionDeserializer.ts   ← internal; NOT in index.ts
+    NumericPosition.ts               ← internal; NOT in index.ts; has static parse()
     EventStore.ts                    ← AppendCondition, ReadOptions, EventStore
     memoryEventStore/
       MemoryEventStore.ts
 
 packages/event-store-postgres/
   src/eventStore/
-    PostgresPosition.ts              ← internal
-    PostgresPositionDeserializer.ts  ← internal
+    PostgresPosition.ts              ← internal; has static parse()
     PostgresEventStore.ts
     appendCommand.ts
     readSql.ts
@@ -276,10 +257,6 @@ export abstract class SequencePosition {
     abstract isBefore(other: SequencePosition): boolean
     abstract equals(other: SequencePosition): boolean
     abstract toString(): string
-}
-
-export interface PositionDeserializer {
-    deserialize(raw: string): SequencePosition
 }
 
 export type AppendCondition = {
@@ -303,17 +280,14 @@ export interface EventStore {
 
 **`packages/event-store`**
 - [ ] `SequencePosition.ts` — abstract class with `isAfter`, `isBefore`, `equals`, `toString`
-- [ ] `PositionDeserializer.ts` — new file
-- [ ] `NumericPosition.ts` — extends `SequencePosition`; `instanceof` guards; not in `index.ts`
-- [ ] `NumericPositionDeserializer.ts` — new file
+- [ ] `NumericPosition.ts` — extends `SequencePosition`; `instanceof` guards; static `parse`; not in `index.ts`
 - [ ] `EventStore.ts` — `AppendCondition.after` optional; `afterPosition` in `ReadOptions`
 - [ ] `MemoryEventStore.ts` — `afterPosition` (exclusive); `after: undefined` in append
 - [ ] `buildDecisionModel.ts` — `after` as `SequencePosition | undefined`
-- [ ] `index.ts` — export `SequencePosition`, `PositionDeserializer`
+- [ ] `index.ts` — export `SequencePosition`
 
 **`packages/event-store-postgres`**
-- [ ] `PostgresPosition.ts` — new file
-- [ ] `PostgresPositionDeserializer.ts` — new file
+- [ ] `PostgresPosition.ts` — new file; static `parse`
 - [ ] `utils.ts` — construct `PostgresPosition`
 - [ ] `PostgresEventStore.ts` — optional `after`; `afterPosition` in SQL
 - [ ] `appendCommand.ts` — cast to `PostgresPosition`
@@ -321,7 +295,6 @@ export interface EventStore {
 - [ ] `HandlerCatchup.ts` — `afterPosition`; `isAfter` via abstract class
 
 **Tests**
-- [ ] `NumericPosition` — comparison, toString, cross-type guard
-- [ ] `NumericPositionDeserializer` — round-trip with toString
+- [ ] `NumericPosition` — comparison, toString, cross-type guard, parse round-trip
 - [ ] `buildDecisionModel` — `after` undefined when no events
 - [ ] All files — `fromPosition` → `afterPosition`; position assertions via `.equals()` / `.toString()`

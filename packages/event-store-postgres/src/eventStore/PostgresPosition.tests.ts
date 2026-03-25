@@ -1,6 +1,5 @@
 import { SequencePosition } from "@dcb-es/event-store"
 import { PostgresPosition } from "./PostgresPosition"
-import { PostgresPositionDeserializer } from "./PostgresPositionDeserializer"
 
 class ForeignPosition extends SequencePosition {
     isAfter(): boolean {
@@ -88,18 +87,16 @@ describe("PostgresPosition", () => {
         })
     })
 
-    describe("PostgresPositionDeserializer", () => {
-        const deserializer = new PostgresPositionDeserializer()
-
-        test("should round-trip through toString and deserialize", () => {
+    describe("parse", () => {
+        test("should round-trip through toString and parse", () => {
             const original = new PostgresPosition(42)
-            const restored = deserializer.deserialize(original.toString())
+            const restored = PostgresPosition.parse(original.toString())
             expect(restored.equals(original)).toBe(true)
         })
 
         test("should round-trip zero", () => {
             const original = new PostgresPosition(0)
-            const restored = deserializer.deserialize(original.toString())
+            const restored = PostgresPosition.parse(original.toString())
             expect(restored.equals(original)).toBe(true)
         })
     })
