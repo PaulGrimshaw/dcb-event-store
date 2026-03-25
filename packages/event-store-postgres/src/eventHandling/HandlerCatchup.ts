@@ -109,7 +109,7 @@ export class HandlerCatchup {
         }
 
         const query = Query.fromItems([{ types: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])
-        for await (const event of this.eventStore.read(query, { afterPosition: currentPosition })) {
+        for await (const event of this.eventStore.read(query, { after: currentPosition })) {
             if (toSequencePosition && event.position.isAfter(toSequencePosition)) {
                 break
             }

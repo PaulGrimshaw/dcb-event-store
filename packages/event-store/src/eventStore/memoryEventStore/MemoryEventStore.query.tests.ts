@@ -72,10 +72,10 @@ describe("memoryEventStore.query", () => {
             await eventStore.append(new EventType2("tag-key-2"))
         })
 
-        describe("with an afterPosition filter applied", () => {
+        describe("with an after filter applied", () => {
             test("should return the second event when read forward after position 1", async () => {
                 const events = await streamAllEventsToArray(
-                    eventStore.read(Query.all(), { afterPosition: new NumericPosition(1) })
+                    eventStore.read(Query.all(), { after: new NumericPosition(1) })
                 )
                 expect(events.length).toBe(1)
                 expect(events[0].position.equals(new NumericPosition(2))).toBe(true)
@@ -83,7 +83,7 @@ describe("memoryEventStore.query", () => {
 
             test("should return the first event when read backward before position 2", async () => {
                 const events = await streamAllEventsToArray(
-                    eventStore.read(Query.all(), { afterPosition: new NumericPosition(2), backwards: true })
+                    eventStore.read(Query.all(), { after: new NumericPosition(2), backwards: true })
                 )
                 expect(events.length).toBe(1)
                 expect(events[0].position.equals(new NumericPosition(1))).toBe(true)
@@ -91,7 +91,7 @@ describe("memoryEventStore.query", () => {
 
             test("should return no events when read backward before position 1", async () => {
                 const events = await streamAllEventsToArray(
-                    eventStore.read(Query.all(), { afterPosition: new NumericPosition(1), backwards: true })
+                    eventStore.read(Query.all(), { after: new NumericPosition(1), backwards: true })
                 )
                 expect(events.length).toBe(0)
             })

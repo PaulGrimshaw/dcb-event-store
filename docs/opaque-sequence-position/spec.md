@@ -5,7 +5,7 @@ feature: "opaque-sequence-position"
 issue: 40
 date_created: 2026-03-24
 last_updated: 2026-03-25
-status: draft
+status: complete
 ---
 
 # Opaque SequencePosition
@@ -30,7 +30,7 @@ Any adapter not backed by a sequential integer (e.g. DynamoDB, issue #38) cannot
 - Each adapter owns its own concrete position class. No cross-adapter dependency.
 - `AppendCondition.after` is optional per the [dcb.events spec](https://dcb.events/specification/). Omitting it means "fail if any matching event exists".
 - Positions are serialisable via `toString()` (on the abstract class) and reconstructable via a static `parse` method on each concrete class.
-- `ReadOptions.afterPosition` has exclusive semantics, consistent with `AppendCondition.after`.
+- `ReadOptions.after` has exclusive semantics, consistent with `AppendCondition.after`.
 
 **Constraints:**
 - Breaking change to `@dcb-es/event-store` public API — semver major bump.
@@ -49,7 +49,7 @@ Any adapter not backed by a sequential integer (e.g. DynamoDB, issue #38) cannot
 
 **Optional `after`.** Aligns with the [dcb.events spec](https://dcb.events/specification/), which states an append condition MAY contain an `after` position. `buildDecisionModel` starts with `after = undefined` and sets it as events are seen — no sentinel needed.
 
-**Exclusive read semantics.** `afterPosition` means "events strictly after this position". The store handles +1 (or equivalent) internally.
+**Exclusive read semantics.** `after` means "events strictly after this position". The store handles +1 (or equivalent) internally.
 
 ---
 
@@ -82,7 +82,7 @@ When present, the store checks only for matching events after that position. Whe
 ```typescript
 export interface ReadOptions {
     backwards?: boolean
-    afterPosition?: SequencePosition
+    after?: SequencePosition
     limit?: number
 }
 ```
@@ -169,7 +169,7 @@ When `after` is present, the adapter uses it to scope the check (e.g. `WHERE seq
 ```
 1. Command handler appends event, receives position
 2. API returns position.toString() to frontend (e.g. "42")
-3. Frontend polls: GET /readmodel?afterPosition=42
+3. Frontend polls: GET /readmodel?after=42
 4. API parses: PostgresPosition.parse("42")
 5. API checks: projection.currentPosition.isAfter(requestedPosition)
 6. If true, return read model; otherwise wait/retry
@@ -177,11 +177,11 @@ When `after` is present, the adapter uses it to scope the check (e.g. `WHERE seq
 
 ### MemoryEventStore
 
-Uses `NumericPosition` internally (same package). Arithmetic via `new NumericPosition(pos.value + 1)`. The `read` method converts `afterPosition` to an inclusive start internally. The `deduplicateEvents` helper keys by `.value` — a legitimate internal detail.
+Uses `NumericPosition` internally (same package). Arithmetic via `new NumericPosition(pos.value + 1)`. The `read` method converts `after` to an inclusive start internally. The `deduplicateEvents` helper keys by `.value` — a legitimate internal detail.
 
 ### PostgresEventStore
 
-Constructs `PostgresPosition` from DB rows and extracts `.value` for SQL parameters. `afterPosition` maps directly to `WHERE sequence_position > $N`. `HandlerCatchup` uses `afterPosition` in read options and `isAfter` for ceiling checks — both via the abstract class.
+Constructs `PostgresPosition` from DB rows and extracts `.value` for SQL parameters. `after` maps directly to `WHERE sequence_position > $N`. `HandlerCatchup` uses `after` in read options and `isAfter` for ceiling checks — both via the abstract class.
 
 ---
 
@@ -194,7 +194,7 @@ Rejected: recreates coupling. Any change to `NumericPosition` becomes a cross-pa
 Rejected: `EventStore` is a port. Projection catch-up and API handlers need comparison and serialisation without knowing the concrete type. A marker interface forces all position logic into adapter-specific code, violating the ports-and-adapters boundary.
 
 **`next()` / `advance(delta)` on the abstract class**
-Rejected: `afterPosition` with exclusive semantics eliminates the need. The store handles +1 internally. `advance(delta)` also exposes a numeric delta concept invalid for all position types.
+Rejected: `after` with exclusive semantics eliminates the need. The store handles +1 internally. `advance(delta)` also exposes a numeric delta concept invalid for all position types.
 
 **`toComparable(): number | string`**
 Rejected: leaks the representation. Callers would treat the comparable value as meaningful, recreating coupling.
@@ -266,7 +266,7 @@ export type AppendCondition = {
 
 export interface ReadOptions {
     backwards?: boolean
-    afterPosition?: SequencePosition
+    after?: SequencePosition
     limit?: number
 }
 
@@ -281,20 +281,20 @@ export interface EventStore {
 **`packages/event-store`**
 - [ ] `SequencePosition.ts` — abstract class with `isAfter`, `isBefore`, `equals`, `toString`
 - [ ] `NumericPosition.ts` — extends `SequencePosition`; `instanceof` guards; static `parse`; not in `index.ts`
-- [ ] `EventStore.ts` — `AppendCondition.after` optional; `afterPosition` in `ReadOptions`
-- [ ] `MemoryEventStore.ts` — `afterPosition` (exclusive); `after: undefined` in append
+- [ ] `EventStore.ts` — `AppendCondition.after` optional; `after` in `ReadOptions`
+- [ ] `MemoryEventStore.ts` — `after` (exclusive); `after: undefined` in append
 - [ ] `buildDecisionModel.ts` — `after` as `SequencePosition | undefined`
 - [ ] `index.ts` — export `SequencePosition`
 
 **`packages/event-store-postgres`**
 - [ ] `PostgresPosition.ts` — new file; static `parse`
 - [ ] `utils.ts` — construct `PostgresPosition`
-- [ ] `PostgresEventStore.ts` — optional `after`; `afterPosition` in SQL
+- [ ] `PostgresEventStore.ts` — optional `after`; `after` in SQL
 - [ ] `appendCommand.ts` — cast to `PostgresPosition`
-- [ ] `readSql.ts` — `afterPosition` → `WHERE sequence_position > $N`
-- [ ] `HandlerCatchup.ts` — `afterPosition`; `isAfter` via abstract class
+- [ ] `readSql.ts` — `after` → `WHERE sequence_position > $N`
+- [ ] `HandlerCatchup.ts` — `after`; `isAfter` via abstract class
 
 **Tests**
 - [ ] `NumericPosition` — comparison, toString, cross-type guard, parse round-trip
 - [ ] `buildDecisionModel` — `after` undefined when no events
-- [ ] All files — `fromPosition` → `afterPosition`; position assertions via `.equals()` / `.toString()`
+- [ ] All files — `fromPosition` → `after`; position assertions via `.equals()` / `.toString()`

@@ -51,8 +51,8 @@ export class MemoryEventStore implements EventStore {
         let yieldedCount = 0
 
         const filterByPosition = (event: SequencedEvent): boolean => {
-            if (!options?.afterPosition) return true
-            return isInRange(event.position, options.afterPosition, options?.backwards)
+            if (!options?.after) return true
+            return isInRange(event.position, options.after, options?.backwards)
         }
 
         const allMatchedEvents = !query.isAll
@@ -94,10 +94,10 @@ export class MemoryEventStore implements EventStore {
     }
 }
 
-const getMatchingEvents = (query: Query, afterPosition: SequencePosition | undefined, events: SequencedEvent[]) => {
+const getMatchingEvents = (query: Query, after: SequencePosition | undefined, events: SequencedEvent[]) => {
     const filterByPosition = (event: SequencedEvent): boolean => {
-        if (!afterPosition) return true
-        return event.position.isAfter(afterPosition)
+        if (!after) return true
+        return event.position.isAfter(after)
     }
 
     if (query.isAll) return events.filter(filterByPosition)

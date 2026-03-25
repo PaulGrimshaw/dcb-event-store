@@ -5,9 +5,9 @@ import { QueryItem } from "../Query"
 
 export const isInRange = (
     sequencePosition: SequencePosition,
-    afterPosition: SequencePosition,
+    after: SequencePosition,
     backwards: boolean | undefined
-) => (backwards ? sequencePosition.isBefore(afterPosition) : sequencePosition.isAfter(afterPosition))
+) => (backwards ? sequencePosition.isBefore(after) : sequencePosition.isAfter(after))
 
 export const matchesQueryItem = (queryItem: QueryItem, { event }: SequencedEvent) => {
     if (queryItem.types && queryItem.types.length > 0 && !queryItem.types.includes(event.type)) return false

@@ -25,7 +25,7 @@ const readSql = (query: Query, tableName: string, options?: ReadOptions) => {
       to_char(e."timestamp" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "timestamp"
     FROM ${tableName} e
     ${query.isAll ? "" : readCriteriaJoin(query, pm, tableName, options)}
-    ${whereClause([afterPositionFilter(pm, "e", options)])}
+    ${whereClause([afterFilter(pm, "e", options)])}
     ORDER BY e.sequence_position ${options?.backwards ? "DESC" : ""}
     ${options?.limit ? `LIMIT ${options.limit}` : ""};
   `
@@ -37,18 +37,18 @@ const notEmpty = (s: string): boolean => s !== null && s.trim() !== ""
 const tagFilterSnip = (pm: ParamManager, c: QueryItem): string =>
     c.tags && c.tags.length ? `tags && ${pm.add(c.tags.values)}::text[]` : ""
 
-const afterPositionFilter = (pm: ParamManager, tableAlias: string, options?: ReadOptions): string =>
-    options?.afterPosition
+const afterFilter = (pm: ParamManager, tableAlias: string, options?: ReadOptions): string =>
+    options?.after
         ? `${tableAlias ? `${tableAlias}.` : ""}sequence_position ${
               options.backwards ? "<" : ">"
-          } ${pm.add((options.afterPosition as PostgresPosition).value)}`
+          } ${pm.add((options.after as PostgresPosition).value)}`
         : ""
 
 const typesFilter = (c: QueryItem, pm: ParamManager): string =>
     c.types?.length ? `type IN (${c.types.map(t => pm.add(t)).join(", ")})` : ""
 
 const getFilterString = (c: QueryItem, pm: ParamManager, options?: ReadOptions): string => {
-    const filters = [typesFilter(c, pm), tagFilterSnip(pm, c), afterPositionFilter(pm, "", options)]
+    const filters = [typesFilter(c, pm), tagFilterSnip(pm, c), afterFilter(pm, "", options)]
     return whereClause(filters)
 }
 
