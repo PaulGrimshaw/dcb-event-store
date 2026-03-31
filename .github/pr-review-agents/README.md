@@ -77,6 +77,7 @@ matrix:
 | Name | Type | Purpose |
 |------|------|---------|
 | `LITELLM_API_KEY` | Secret | Authentication token for LiteLLM proxy |
+| `LITE_LLM_WAF_AUTH_KEY` | Secret | WAF bypass key (`x-ktl-auth-key` header) |
 | `LITELLM_BASE_URL` | Variable | LiteLLM endpoint (set as `ANTHROPIC_BASE_URL`) |
 | `GITHUB_TOKEN` | Secret | Provided automatically by GitHub Actions |
 

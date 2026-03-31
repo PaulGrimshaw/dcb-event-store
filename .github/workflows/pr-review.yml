@@ -59,3 +59,4 @@ jobs:
         env:
           ANTHROPIC_BASE_URL: ${{ vars.LITELLM_BASE_URL }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.LITELLM_API_KEY }}
+          ANTHROPIC_CUSTOM_HEADERS: "x-ktl-auth-key: ${{ secrets.LITE_LLM_WAF_AUTH_KEY }}"
