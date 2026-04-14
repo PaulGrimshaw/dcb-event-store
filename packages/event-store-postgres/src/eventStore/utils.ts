@@ -2,15 +2,13 @@ import { Tags, DcbEvent, SequencedEvent, SequencePosition, Timestamp } from "@dc
 
 export type DbWriteEvent = {
     type: string
-    data: string
-    metadata: string
+    payload: string
     tags: string[]
 }
 
 export type DbReadEvent = {
     type: string
-    data: unknown
-    metadata: unknown
+    payload: string
     tags: string[]
     timestamp: string
     sequence_position: string
@@ -19,20 +17,22 @@ export type DbReadEvent = {
 export const dbEventConverter = {
     toDb: (dcbEvent: DcbEvent): DbWriteEvent => ({
         type: dcbEvent.type,
-        data: JSON.stringify(dcbEvent.data),
-        metadata: JSON.stringify(dcbEvent.metadata),
+        payload: JSON.stringify({ data: dcbEvent.data, metadata: dcbEvent.metadata }),
         tags: [...dcbEvent.tags.values]
     }),
-    fromDb: (dbEvent: DbReadEvent): SequencedEvent => ({
-        position: SequencePosition.fromString(dbEvent.sequence_position),
-        timestamp: Timestamp.create(dbEvent.timestamp),
-        event: {
-            type: dbEvent.type,
-            data: dbEvent.data,
-            metadata: dbEvent.metadata,
-            tags: Tags.from(dbEvent.tags)
+    fromDb: (dbEvent: DbReadEvent): SequencedEvent => {
+        const { data, metadata } = JSON.parse(dbEvent.payload)
+        return {
+            position: SequencePosition.fromString(dbEvent.sequence_position),
+            timestamp: Timestamp.create(dbEvent.timestamp),
+            event: {
+                type: dbEvent.type,
+                data,
+                metadata,
+                tags: Tags.from(dbEvent.tags)
+            }
         }
-    })
+    }
 }
 
 export class ParamManager {
