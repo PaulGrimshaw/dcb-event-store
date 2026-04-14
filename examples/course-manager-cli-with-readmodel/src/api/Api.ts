@@ -1,4 +1,4 @@
-import { buildDecisionModel, EventStore } from "@dcb-es/event-store"
+import { buildDecisionModel, EventStore, SequencePosition } from "@dcb-es/event-store"
 import {
     PostgresCourseSubscriptionsRepository,
     STUDENT_SUBSCRIPTION_LIMIT
@@ -22,26 +22,18 @@ import {
     StudentAlreadySubscribed,
     StudentSubscriptions
 } from "./DecisionModels"
-import { HandlerCatchup } from "@dcb-es/event-store-postgres"
-import { PostgresCourseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection"
+import { waitUntilProcessed } from "@dcb-es/event-store-postgres"
 
-export const setupHandlers = (pool: Pool) => ({
-    CourseProjection: PostgresCourseSubscriptionsProjection(pool)
-})
+export const PROJECTION_NAME = "CourseProjection"
 
 export class Api {
     private readModelRepository: ReturnType<typeof PostgresCourseSubscriptionsRepository>
-    private handlerCatchup: HandlerCatchup
-    private handlers: ReturnType<typeof setupHandlers>
 
     constructor(
-        pool: Pool,
-        private eventStore: EventStore,
-        handlerCatchup: HandlerCatchup
+        private pool: Pool,
+        private eventStore: EventStore
     ) {
         this.readModelRepository = PostgresCourseSubscriptionsRepository(pool)
-        this.handlerCatchup = handlerCatchup
-        this.handlers = setupHandlers(pool)
     }
 
     async findCourseById(courseId: string) {
@@ -59,11 +51,11 @@ export class Api {
 
         if (state.courseExists) throw new Error(`Course with id ${cmd.id} already exists`)
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new CourseWasRegisteredEvent({ courseId: cmd.id, title: cmd.title, capacity: cmd.capacity }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
     }
 
     async registerStudent(cmd: { id: string; name: string }) {
@@ -75,11 +67,11 @@ export class Api {
 
         if (state.studentAlreadyRegistered) throw new Error(`Student with id ${id} already registered.`)
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new StudentWasRegistered({ studentId: id, name, studentNumber: state.nextStudentNumber }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
     }
 
     async updateCourseCapacity(cmd: { courseId: string; newCapacity: number }) {
@@ -94,11 +86,11 @@ export class Api {
         if (state.CourseCapacity.capacity === newCapacity)
             throw new Error("New capacity is the same as the current capacity.")
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new CourseCapacityWasChangedEvent({ courseId, newCapacity }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
     }
 
     async updateCourseTitle(cmd: { courseId: string; newTitle: string }) {
@@ -112,11 +104,11 @@ export class Api {
         if (!state.courseExists) throw new Error(`Course ${courseId} doesn't exist.`)
         if (state.courseTitle === newTitle) throw new Error("New title is the same as the current title.")
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new CourseTitleWasChangedEvent({ courseId, newTitle }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
     }
 
     async subscribeStudentToCourse(cmd: { courseId: string; studentId: string }) {
@@ -137,11 +129,11 @@ export class Api {
         if (state.studentSubscriptions.subscriptionCount >= STUDENT_SUBSCRIPTION_LIMIT)
             throw new Error(`Student ${studentId} is already subscribed to the maximum number of courses`)
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new StudentWasSubscribedEvent({ courseId, studentId }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
     }
 
     async unsubscribeStudentFromCourse(cmd: { courseId: string; studentId: string }) {
@@ -156,10 +148,14 @@ export class Api {
         if (!state.studentAlreadySubscribed)
             throw new Error(`Student ${studentId} is not subscribed to course ${courseId}.`)
 
-        await this.eventStore.append({
+        const position = await this.eventStore.append({
             events: new StudentWasUnsubscribedEvent({ courseId, studentId }),
             condition: appendCondition
         })
-        await this.handlerCatchup.catchupHandlers(this.handlers)
+        await this.waitForProjection(position)
+    }
+
+    private waitForProjection(position: SequencePosition): Promise<void> {
+        return waitUntilProcessed(this.pool, PROJECTION_NAME, position)
     }
 }

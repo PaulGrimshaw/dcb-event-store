@@ -4,9 +4,10 @@ import {
     installPostgresCourseSubscriptionsRepository,
     PostgresCourseSubscriptionsRepository
 } from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository"
-import { Api, setupHandlers } from "./Api"
+import { Api, PROJECTION_NAME } from "./Api"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
-import { HandlerCatchup, PostgresEventStore } from "@dcb-es/event-store-postgres"
+import { PostgresEventStore, runHandler, ensureHandlersInstalled } from "@dcb-es/event-store-postgres"
+import { PostgresCourseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection"
 
 const COURSE_1 = {
     id: "course-1",
@@ -24,15 +25,26 @@ describe("EventSourcedApi", () => {
     let pool: Pool
     let repository: ReturnType<typeof PostgresCourseSubscriptionsRepository>
     let api: Api
+    let handlerController: AbortController
+    let handlerPromise: Promise<void>
 
     beforeAll(async () => {
-        pool = await getTestPgDatabasePool()
+        pool = await getTestPgDatabasePool({ max: 20 })
         const eventStore = new PostgresEventStore({ pool })
         await eventStore.ensureInstalled()
         await installPostgresCourseSubscriptionsRepository(pool)
-        const handlerCatchup = new HandlerCatchup(pool, eventStore)
-        await handlerCatchup.ensureInstalled(Object.keys(setupHandlers(pool)))
-        api = new Api(pool, eventStore, handlerCatchup)
+        await ensureHandlersInstalled(pool, [PROJECTION_NAME], "_handler_bookmarks")
+
+        handlerController = new AbortController()
+        ;({ promise: handlerPromise } = runHandler({
+            pool,
+            eventStore,
+            handlerName: PROJECTION_NAME,
+            handlerFactory: client => PostgresCourseSubscriptionsProjection(client),
+            signal: handlerController.signal
+        }))
+
+        api = new Api(pool, eventStore)
         repository = PostgresCourseSubscriptionsRepository(pool)
     })
 
@@ -42,9 +54,25 @@ describe("EventSourcedApi", () => {
         await pool.query("TRUNCATE table students")
         await pool.query("TRUNCATE table subscriptions")
         await pool.query("UPDATE _handler_bookmarks SET last_sequence_position = 0")
+
+        // Restart handler with fresh bookmark
+        handlerController.abort()
+        await handlerPromise.catch(() => {})
+
+        const eventStore = new PostgresEventStore({ pool })
+        handlerController = new AbortController()
+        ;({ promise: handlerPromise } = runHandler({
+            pool,
+            eventStore,
+            handlerName: PROJECTION_NAME,
+            handlerFactory: client => PostgresCourseSubscriptionsProjection(client),
+            signal: handlerController.signal
+        }))
     })
 
     afterAll(async () => {
+        handlerController.abort()
+        await handlerPromise.catch(() => {})
         if (pool) await pool.end()
     })
 
