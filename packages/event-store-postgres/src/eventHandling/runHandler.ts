@@ -46,8 +46,14 @@ export function runHandler(options: HandlerRunnerOptions): RunningHandler {
 
         let position = SequencePosition.fromString(String(row.last_sequence_position))
 
-        // Build query from handler's event types (create a temporary handler to inspect keys)
-        const sampleHandler = handlerFactory(null as unknown as PoolClient)
+        // Inspect handler keys to build the subscribe query.
+        // Unlike append conditions, subscribe queries don't require types+tags — Query.all() is valid.
+        let sampleHandler
+        try {
+            sampleHandler = handlerFactory(null as unknown as PoolClient)
+        } catch {
+            throw new Error(`handlerFactory for "${handlerName}" must not access the client during construction.`)
+        }
         const types = Object.keys(sampleHandler.when) as string[]
         const query =
             types.length > 0 && sampleHandler.tagFilter
@@ -55,6 +61,7 @@ export function runHandler(options: HandlerRunnerOptions): RunningHandler {
                 : Query.all()
 
         for await (const event of eventStore.subscribe(query, { after: position, signal })) {
+            if (signal?.aborted) break
             const client = await pool.connect()
             try {
                 await client.query("BEGIN")
