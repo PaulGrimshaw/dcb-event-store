@@ -5,6 +5,7 @@ node_modules
 npm-debug.log
 *.log
 .npmrc
+package-lock.json
 coverage
 .nyc*
 *.d.ts
