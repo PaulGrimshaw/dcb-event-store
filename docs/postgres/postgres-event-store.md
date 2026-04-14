@@ -1,6 +1,6 @@
 # PostgresEventStore
 
-Full reference for `@dcb-es/event-store-postgres` -- the Postgres implementation of the [EventStore interface](../core/event-store-interface.md).
+API reference for `@dcb-es/event-store-postgres` -- the Postgres implementation of the [EventStore interface](../core/event-store-interface.md). For the design principles behind these choices, start with [Design](design.md).
 
 ## PostgresEventStoreOptions
 

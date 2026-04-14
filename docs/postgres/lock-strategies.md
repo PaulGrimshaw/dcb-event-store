@@ -1,8 +1,8 @@
 # Lock Strategies
 
-Lock strategies control how `PostgresEventStore` serializes concurrent appends that target overlapping scopes. Two built-in strategies are provided; custom strategies can be implemented via the `LockStrategy` interface.
+API reference for lock strategies. For why scoped locking exists and how it fits into the append flow, see [Design](design.md#scoped-locking-on-type-tag-pairs).
 
-See [PostgresEventStore](./postgres-event-store.md) for how locks are used during appends.
+Lock strategies control how `PostgresEventStore` serializes concurrent appends that target overlapping scopes. Two built-in strategies are provided; custom strategies can be implemented via the `LockStrategy` interface.
 
 ## LockStrategy interface
 

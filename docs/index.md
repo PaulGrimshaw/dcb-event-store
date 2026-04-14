@@ -33,6 +33,7 @@ See the full [DCB specification](https://dcb.events/specification/) for the patt
 
 ### Postgres (`@dcb-es/event-store-postgres`)
 
+- [Design](postgres/design.md) -- How the Postgres adapter implements DCBs: scoped locking, condition checking, append strategies, notifications
 - [PostgresEventStore](postgres/postgres-event-store.md) -- Configuration, schema, append strategies, `pg_notify` subscriptions, and `subscribe()`
 - [Lock Strategies](postgres/lock-strategies.md) -- Advisory locks, row-level locks, FNV-1a hashing, and choosing a strategy
 - [Event Handling](postgres/event-handling.md) -- `runHandler`, `waitUntilProcessed`, bookmark management, and building projections
