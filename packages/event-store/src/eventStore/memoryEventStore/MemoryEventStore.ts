@@ -1,33 +1,20 @@
 import { SequencedEvent, EventStore, AppendCondition, DcbEvent, ReadOptions } from "../EventStore"
 import { AppendConditionError } from "../AppendConditionError"
-import { NumericPosition } from "../NumericPosition"
 import { SequencePosition } from "../SequencePosition"
 import { Timestamp } from "../Timestamp"
-import { isInRange, matchesQueryItem } from "./utils"
+import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils"
 import { Query } from "../Query"
 
 const ensureIsArray = (events: DcbEvent | DcbEvent[]) => (Array.isArray(events) ? events : [events])
 
-const asNumeric = (pos: SequencePosition) => (pos as NumericPosition).value
+const offsetPosition = (pos: SequencePosition, n: number) =>
+    SequencePosition.fromString(String(parseInt(pos.toString()) + n))
 
 const lastPosition = (events: SequencedEvent[]) =>
     events
         .map(event => event.position)
         .filter(pos => pos !== undefined)
-        .pop() || new NumericPosition(0)
-
-const deduplicateEvents = (events: SequencedEvent[]): SequencedEvent[] => {
-    const seen = new Map<number, SequencedEvent>()
-    for (const event of events) {
-        const key = asNumeric(event.position)
-        if (!seen.has(key)) seen.set(key, event)
-    }
-    return Array.from(seen.values())
-}
-
-const byPosition = (a: SequencedEvent, b: SequencedEvent) => asNumeric(a.position) - asNumeric(b.position)
-
-const byPositionDesc = (a: SequencedEvent, b: SequencedEvent) => asNumeric(b.position) - asNumeric(a.position)
+        .pop() || SequencePosition.initial()
 
 export class MemoryEventStore implements EventStore {
     private testListenerRegistry: { read: () => void; append: () => void } = {
@@ -60,11 +47,15 @@ export class MemoryEventStore implements EventStore {
                   this.events
                       .filter(event => filterByPosition(event) && matchesQueryItem(criterion, event))
                       .map(event => ({ ...event, matchedCriteria: [index.toString()] }))
-                      .sort(byPosition)
+                      .sort((a, b) => SequencePosition.compare(a.position, b.position))
               )
             : this.events.filter(filterByPosition)
 
-        const uniqueEvents = deduplicateEvents(allMatchedEvents).sort(options?.backwards ? byPositionDesc : byPosition)
+        const uniqueEvents = deduplicateEvents(allMatchedEvents).sort((a, b) =>
+            options?.backwards
+                ? SequencePosition.compare(b.position, a.position)
+                : SequencePosition.compare(a.position, b.position)
+        )
 
         for (const event of uniqueEvents) {
             yield event
@@ -77,11 +68,10 @@ export class MemoryEventStore implements EventStore {
 
     async append(events: DcbEvent | DcbEvent[], appendCondition?: AppendCondition): Promise<void> {
         if (this.testListenerRegistry.append) this.testListenerRegistry.append()
-        const nextValue = asNumeric(lastPosition(this.events)) + 1
         const sequencedEvents: Array<SequencedEvent> = ensureIsArray(events).map((ev, i) => ({
             event: ev,
             timestamp: Timestamp.now(),
-            position: new NumericPosition(nextValue + i)
+            position: offsetPosition(lastPosition(this.events), i + 1)
         }))
 
         if (appendCondition) {

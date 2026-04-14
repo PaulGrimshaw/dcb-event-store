@@ -1,7 +1,6 @@
 import { EventHandler, EventStore, Query, SequencePosition, Tags } from "@dcb-es/event-store"
 import { Pool, PoolClient } from "pg"
 import { ensureHandlersInstalled, registerhandlers } from "./ensureHandlersInstalled"
-import { PostgresPosition } from "../eventStore/PostgresPosition"
 
 export type HandlerCheckPoints = Record<string, SequencePosition>
 
@@ -58,7 +57,7 @@ export class HandlerCatchup {
                 if (rawPosition !== undefined) {
                     return {
                         ...acc,
-                        [handlerId]: new PostgresPosition(parseInt(`${rawPosition}`))
+                        [handlerId]: SequencePosition.fromString(`${rawPosition}`)
                     }
                 } else {
                     throw new Error(`Failed to retrieve sequence number for handler ${handlerId}`)
@@ -82,10 +81,7 @@ export class HandlerCatchup {
             .map((_, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::bigint)`)
             .join(", ")
 
-        const updateParams = Object.entries(locks).flatMap(([handlerId, position]) => [
-            handlerId,
-            (position as PostgresPosition).value
-        ])
+        const updateParams = Object.entries(locks).flatMap(([handlerId, position]) => [handlerId, position.toString()])
 
         const updateQuery = `
             UPDATE ${this.tableName} SET last_sequence_position = v.last_sequence_position
@@ -104,8 +100,7 @@ export class HandlerCatchup {
         if (!toSequencePosition) {
             const lastEventInStore = (await this.eventStore.read(Query.all(), { backwards: true, limit: 1 }).next())
                 .value
-            if (!lastEventInStore) return currentPosition
-            toSequencePosition = lastEventInStore.position
+            toSequencePosition = lastEventInStore?.position ?? SequencePosition.initial()
         }
 
         const query = Query.fromItems([{ types: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])

@@ -1,6 +1,5 @@
 import { Query, QueryItem, ReadOptions } from "@dcb-es/event-store"
 import { ParamManager } from "./utils"
-import { PostgresPosition } from "./PostgresPosition"
 
 export const readSqlWithCursor = (query: Query, tableName: string, options?: ReadOptions) => {
     const { sql, params } = readSql(query, tableName, options)
@@ -27,7 +26,7 @@ const readSql = (query: Query, tableName: string, options?: ReadOptions) => {
     ${query.isAll ? "" : readCriteriaJoin(query, pm, tableName, options)}
     ${whereClause([afterFilter(pm, "e", options)])}
     ORDER BY e.sequence_position ${options?.backwards ? "DESC" : ""}
-    ${options?.limit ? `LIMIT ${options.limit}` : ""};
+    ${options?.limit ? `LIMIT ${pm.add(options.limit)}` : ""};
   `
     return { sql, params: pm.params }
 }
@@ -41,7 +40,7 @@ const afterFilter = (pm: ParamManager, tableAlias: string, options?: ReadOptions
     options?.after
         ? `${tableAlias ? `${tableAlias}.` : ""}sequence_position ${
               options.backwards ? "<" : ">"
-          } ${pm.add((options.after as PostgresPosition).value)}`
+          } ${pm.add(options.after.toString())}`
         : ""
 
 const typesFilter = (c: QueryItem, pm: ParamManager): string =>
