@@ -53,6 +53,29 @@ export class PostgresEventStore implements EventStore {
         await ensureInstalled(this.pool, this.tableName, this.lockStrategy)
     }
 
+    // ─── Read ───────────────────────────────────────────────────────
+
+    async *read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent> {
+        const client = await this.pool.connect()
+        try {
+            // Postgres requires a transaction for cursor-based streaming
+            await client.query("BEGIN")
+            const { sql, params, cursorName } = readSqlWithCursor(query, this.tableName, options)
+            await client.query(sql, params)
+
+            let result: QueryResult
+            while ((result = await client.query(`FETCH ${READ_BATCH_SIZE} FROM ${cursorName}`))?.rows?.length) {
+                for (const ev of result.rows) yield dbEventConverter.fromDb(ev)
+            }
+        } finally {
+            // ROLLBACK closes the read-only transaction — nothing was written
+            await client.query("ROLLBACK").catch(() => {})
+            client.release()
+        }
+    }
+
+    // ─── Append routing ─────────────────────────────────────────────
+
     async append(command: AppendCommand | AppendCommand[]): Promise<SequencePosition> {
         const commands = ensureIsArray(command)
 
@@ -66,23 +89,6 @@ export class PostgresEventStore implements EventStore {
         }
 
         return this.appendBatch(commands)
-    }
-
-    async *read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent> {
-        const client = await this.pool.connect()
-        try {
-            await client.query("BEGIN")
-            const { sql, params, cursorName } = readSqlWithCursor(query, this.tableName, options)
-            await client.query(sql, params)
-
-            let result: QueryResult
-            while ((result = await client.query(`FETCH ${READ_BATCH_SIZE} FROM ${cursorName}`))?.rows?.length) {
-                for (const ev of result.rows) yield dbEventConverter.fromDb(ev)
-            }
-        } finally {
-            await client.query("ROLLBACK").catch(() => {})
-            client.release()
-        }
     }
 
     /** Stored procedure — single round-trip for small appends (≤ copyThreshold events). */
@@ -155,7 +161,8 @@ export class PostgresEventStore implements EventStore {
         })
     }
 
-    /** Run a callback inside a READ COMMITTED transaction, with rollback on error. */
+    // ─── Transaction helper ─────────────────────────────────────────
+
     private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
         const client = await this.pool.connect()
         try {

@@ -27,8 +27,8 @@ export async function copyEventsToTable(
         (function* () {
             for (const evt of events) {
                 const tags = formatTagsForCopy(evt.tags.values)
-                const payload = escapeCopyText(serializePayload(evt))
-                yield `${escapeCopyText(evt.type)}\t${tags}\t${payload}\n`
+                const payload = escapeCopy(serializePayload(evt))
+                yield `${escapeCopy(evt.type)}\t${tags}\t${payload}\n`
             }
         })()
     )
@@ -54,8 +54,8 @@ export async function copyConditionsToTempTable(client: PoolClient, conditions: 
         Readable.from(
             (function* () {
                 for (const c of conditions) {
-                    const types = c.types.map(t => `"${escapeCopyQuoted(t)}"`).join(",")
-                    const tags = c.tags.map(t => `"${escapeCopyQuoted(t)}"`).join(",")
+                    const types = c.types.map(t => `"${escapeCopy(t, true)}"`).join(",")
+                    const tags = c.tags.map(t => `"${escapeCopy(t, true)}"`).join(",")
                     yield `${c.cmdIdx}\t{${types}}\t{${tags}}\t${c.afterPos}\n`
                 }
             })()
@@ -69,11 +69,15 @@ function serializePayload(evt: DcbEvent): string {
 }
 
 function formatTagsForCopy(tags: string[]): string {
-    return `{${tags.map(t => `"${escapeCopyQuoted(t)}"`).join(",")}}`
+    return `{${tags.map(t => `"${escapeCopy(t, true)}"`).join(",")}}`
 }
 
-/** Single-pass escape for COPY TEXT format (tab-delimited rows). */
-function escapeCopyText(value: string): string {
+/**
+ * Single-pass escape for COPY TEXT format.
+ * When `quoted` is true, also escapes double-quotes for use inside
+ * double-quoted array elements (e.g. tag values within Postgres arrays).
+ */
+function escapeCopy(value: string, quoted = false): string {
     let result = ""
     for (let i = 0; i < value.length; i++) {
         switch (value.charCodeAt(i)) {
@@ -92,36 +96,9 @@ function escapeCopyText(value: string): string {
             case 13:
                 result += "\\r"
                 break // carriage return
-            default:
-                result += value[i]
-        }
-    }
-    return result
-}
-
-/** Single-pass escape for double-quoted array elements within COPY TEXT. */
-function escapeCopyQuoted(value: string): string {
-    let result = ""
-    for (let i = 0; i < value.length; i++) {
-        switch (value.charCodeAt(i)) {
-            case 92:
-                result += "\\\\"
-                break // backslash
             case 34:
-                result += '\\"'
-                break // double quote
-            case 0:
-                result += "\\0"
-                break // null
-            case 9:
-                result += "\\t"
-                break // tab
-            case 10:
-                result += "\\n"
-                break // newline
-            case 13:
-                result += "\\r"
-                break // carriage return
+                result += quoted ? '\\"' : '"'
+                break // double quote — only escape inside array elements
             default:
                 result += value[i]
         }

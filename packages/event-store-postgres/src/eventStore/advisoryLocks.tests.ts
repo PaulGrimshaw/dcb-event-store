@@ -140,3 +140,38 @@ describe("per-pair locking — overlapping scopes share keys", () => {
         expect(shared.length).toBeGreaterThan(0)
     })
 })
+
+describe("FNV-1a hash properties (via computeLockKeys)", () => {
+    it("is deterministic — same input always produces same key", () => {
+        const evt = { type: "Evt", tags: Tags.fromObj({ id: "123" }), data: {}, metadata: {} }
+        const keys1 = computeLockKeys([evt])
+        const keys2 = computeLockKeys([evt])
+        expect(keys1).toEqual(keys2)
+    })
+
+    it("produces signed 32-bit bigints", () => {
+        const events = Array.from({ length: 200 }, (_, i) => ({
+            type: `Type${i}`,
+            tags: Tags.fromObj({ id: `${i}` }),
+            data: {},
+            metadata: {}
+        }))
+        const keys = computeLockKeys(events)
+        for (const k of keys) {
+            expect(k).toBeGreaterThanOrEqual(BigInt(-2147483648))
+            expect(k).toBeLessThanOrEqual(BigInt(2147483647))
+        }
+    })
+
+    it("has low collision rate across 1000 distinct pairs", () => {
+        const events = Array.from({ length: 1000 }, (_, i) => ({
+            type: "T",
+            tags: Tags.fromObj({ id: `entity-${i}` }),
+            data: {},
+            metadata: {}
+        }))
+        const keys = computeLockKeys(events)
+        // With 1000 keys in 2^32 space, collisions should be ~0
+        expect(keys.length).toBe(1000)
+    })
+})
