@@ -1,13 +1,14 @@
 import { EventHandler, EventStore, Query, SequencePosition, Tags } from "@dcb-es/event-store"
 import { Pool, PoolClient } from "pg"
-import { ensureHandlersInstalled, registerhandlers } from "./ensureHandlersInstalled"
+import { ensureHandlersInstalled, registerHandlers } from "./ensureHandlersInstalled"
 
 export type HandlerCheckPoints = Record<string, SequencePosition>
 
 export class HandlerCatchup {
     private tableName: string
+
     constructor(
-        private client: Pool | PoolClient,
+        private pool: Pool,
         private eventStore: EventStore,
         tablePrefix?: string
     ) {
@@ -15,56 +16,65 @@ export class HandlerCatchup {
     }
 
     async ensureInstalled(handlerIds: string[]): Promise<void> {
-        await ensureHandlersInstalled(this.client, handlerIds, this.tableName)
+        await ensureHandlersInstalled(this.pool, handlerIds, this.tableName)
     }
 
     async registerHandlers(handlerIds: string[]): Promise<void> {
-        await registerhandlers(this.client, handlerIds, this.tableName)
+        await registerHandlers(this.pool, handlerIds, this.tableName)
     }
 
     async catchupHandlers(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         handlers: Record<string, EventHandler<any, any>>
     ) {
-        const currentCheckPoints = await this.lockHandlers(handlers, this.tableName)
+        const client = await this.pool.connect()
+        try {
+            await client.query("BEGIN")
 
-        await Promise.all(
-            Object.entries(handlers).map(
-                async ([handlerId, handler]) =>
-                    (currentCheckPoints[handlerId] = await this.catchupHandler(handler, currentCheckPoints[handlerId]))
+            const currentCheckPoints = await this.lockHandlers(client, handlers)
+
+            await Promise.all(
+                Object.entries(handlers).map(
+                    async ([handlerId, handler]) =>
+                        (currentCheckPoints[handlerId] = await this.catchupHandler(
+                            handler,
+                            currentCheckPoints[handlerId]
+                        ))
+                )
             )
-        )
-        await this.updateBookmarksAndReleaseLocks(currentCheckPoints)
+
+            await this.updateBookmarks(client, currentCheckPoints)
+            await client.query("COMMIT")
+        } catch (err) {
+            await client.query("ROLLBACK").catch(() => {})
+            throw err
+        } finally {
+            client.release()
+        }
     }
 
     private async lockHandlers(
+        client: PoolClient,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        handlers: Record<string, EventHandler<any, any>>,
-        tableName: string
+        handlers: Record<string, EventHandler<any, any>>
     ): Promise<HandlerCheckPoints> {
         try {
-            const selectResult = await this.client.query(
+            const selectResult = await client.query(
                 `
                 SELECT handler_id, last_sequence_position
-                FROM ${tableName}
+                FROM ${this.tableName}
                 WHERE handler_id = ANY($1::text[])
                 FOR UPDATE NOWAIT;`,
                 [Object.keys(handlers)]
             )
 
-            const result = Object.keys(handlers).reduce((acc, handlerId) => {
+            return Object.keys(handlers).reduce((acc, handlerId) => {
                 const rawPosition = selectResult.rows.find(row => row.handler_id === handlerId)?.last_sequence_position
                 if (rawPosition !== undefined) {
-                    return {
-                        ...acc,
-                        [handlerId]: SequencePosition.fromString(`${rawPosition}`)
-                    }
-                } else {
-                    throw new Error(`Failed to retrieve sequence number for handler ${handlerId}`)
+                    return { ...acc, [handlerId]: SequencePosition.fromString(`${rawPosition}`) }
                 }
+                throw new Error(`Failed to retrieve sequence number for handler ${handlerId}`)
             }, {})
-
-            return result
         } catch (error) {
             const err = error as { code?: string }
             if (err.code === "55P03") {
@@ -74,7 +84,7 @@ export class HandlerCatchup {
         }
     }
 
-    private async updateBookmarksAndReleaseLocks(locks: HandlerCheckPoints): Promise<void> {
+    private async updateBookmarks(client: PoolClient, locks: HandlerCheckPoints): Promise<void> {
         if (Object.values(locks).some(lock => !lock)) throw new Error("Sequence number is required to commit")
 
         const updateValues = Object.keys(locks)
@@ -83,12 +93,12 @@ export class HandlerCatchup {
 
         const updateParams = Object.entries(locks).flatMap(([handlerId, position]) => [handlerId, position.toString()])
 
-        const updateQuery = `
-            UPDATE ${this.tableName} SET last_sequence_position = v.last_sequence_position
-            FROM (VALUES ${updateValues}) AS v(handler_id, last_sequence_position)
-            WHERE ${this.tableName}.handler_id = v.handler_id;`
-
-        await this.client.query(updateQuery, updateParams)
+        await client.query(
+            `UPDATE ${this.tableName} SET last_sequence_position = v.last_sequence_position
+             FROM (VALUES ${updateValues}) AS v(handler_id, last_sequence_position)
+             WHERE ${this.tableName}.handler_id = v.handler_id;`,
+            updateParams
+        )
     }
 
     private async catchupHandler(
@@ -98,8 +108,9 @@ export class HandlerCatchup {
         toSequencePosition?: SequencePosition
     ) {
         if (!toSequencePosition) {
-            const lastEventInStore = (await this.eventStore.read(Query.all(), { backwards: true, limit: 1 }).next())
-                .value
+            const gen = this.eventStore.read(Query.all(), { backwards: true, limit: 1 })
+            const lastEventInStore = (await gen.next()).value
+            await gen.return(undefined) // release cursor connection
             toSequencePosition = lastEventInStore?.position ?? SequencePosition.initial()
         }
 
