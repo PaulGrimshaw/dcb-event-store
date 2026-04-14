@@ -4,7 +4,8 @@ export {
     SequencedEvent,
     AppendCondition,
     AppendCommand,
-    ReadOptions
+    ReadOptions,
+    validateAppendCondition
 } from "./src/eventStore/EventStore"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError"
 

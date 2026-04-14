@@ -9,7 +9,8 @@ import {
     SequencePosition,
     ReadOptions,
     Query,
-    ensureIsArray
+    ensureIsArray,
+    validateAppendCondition
 } from "@dcb-es/event-store"
 import { dbEventConverter } from "./utils"
 import { readSqlWithCursor } from "./readSql"
@@ -78,6 +79,9 @@ export class PostgresEventStore implements EventStore {
 
     async append(command: AppendCommand | AppendCommand[]): Promise<SequencePosition> {
         const commands = ensureIsArray(command)
+        for (const cmd of commands) {
+            if (cmd.condition) validateAppendCondition(cmd.condition)
+        }
 
         if (commands.length === 1) {
             const evts = ensureIsArray(commands[0].events)

@@ -12,7 +12,7 @@ class EventType1 implements DcbEvent {
     metadata: Record<string, never> = {}
 
     constructor(tagValue?: string) {
-        this.tags = tagValue ? Tags.fromObj({ testTagKey: tagValue }) : Tags.from([])
+        this.tags = Tags.fromObj({ testTagKey: tagValue ?? "default" })
         this.data = {}
     }
 }
@@ -42,7 +42,9 @@ describe("memoryEventStore.append", () => {
         })
         describe("when append condition with types filter and after provided", () => {
             const condition: AppendCondition = {
-                failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.createEmpty() }]),
+                failIfEventsMatch: Query.fromItems([
+                    { types: ["testEvent1"], tags: Tags.fromObj({ testTagKey: "default" }) }
+                ]),
                 after: SequencePosition.fromString("1")
             }
             test("should successfully append an event without throwing under specified conditions", async () => {
@@ -84,7 +86,9 @@ describe("memoryEventStore.append", () => {
 
         describe("when append condition with types filter and after provided", () => {
             const condition: AppendCondition = {
-                failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.createEmpty() }]),
+                failIfEventsMatch: Query.fromItems([
+                    { types: ["testEvent1"], tags: Tags.fromObj({ testTagKey: "default" }) }
+                ]),
                 after: SequencePosition.initial()
             }
             test("should throw an error if appended event exceeds the maximum allowed sequence number", async () => {
@@ -166,7 +170,9 @@ describe("memoryEventStore.append", () => {
         describe("when append condition with after omitted (undefined)", () => {
             test("should throw when matching events exist and after is undefined", async () => {
                 const condition: AppendCondition = {
-                    failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.createEmpty() }])
+                    failIfEventsMatch: Query.fromItems([
+                        { types: ["testEvent1"], tags: Tags.fromObj({ testTagKey: "default" }) }
+                    ])
                 }
                 await expect(eventStore.append({ events: new EventType1(), condition })).rejects.toThrow(
                     AppendConditionError
@@ -175,7 +181,9 @@ describe("memoryEventStore.append", () => {
 
             test("should succeed when no matching events exist and after is undefined", async () => {
                 const condition: AppendCondition = {
-                    failIfEventsMatch: Query.fromItems([{ types: ["nonExistentEvent"], tags: Tags.createEmpty() }])
+                    failIfEventsMatch: Query.fromItems([
+                        { types: ["nonExistentEvent"], tags: Tags.fromObj({ testTagKey: "default" }) }
+                    ])
                 }
                 await expect(eventStore.append({ events: new EventType1(), condition })).resolves.not.toThrow()
             })
@@ -185,8 +193,8 @@ describe("memoryEventStore.append", () => {
             test("should throw when any query item matches", async () => {
                 const condition: AppendCondition = {
                     failIfEventsMatch: Query.fromItems([
-                        { types: ["nonExistentEvent"], tags: Tags.createEmpty() },
-                        { types: ["testEvent1"], tags: Tags.createEmpty() }
+                        { types: ["nonExistentEvent"], tags: Tags.fromObj({ testTagKey: "default" }) },
+                        { types: ["testEvent1"], tags: Tags.fromObj({ testTagKey: "default" }) }
                     ]),
                     after: SequencePosition.initial()
                 }
@@ -198,8 +206,8 @@ describe("memoryEventStore.append", () => {
             test("should succeed when no query items match", async () => {
                 const condition: AppendCondition = {
                     failIfEventsMatch: Query.fromItems([
-                        { types: ["nonExistentEvent1"], tags: Tags.createEmpty() },
-                        { types: ["nonExistentEvent2"], tags: Tags.createEmpty() }
+                        { types: ["nonExistentEvent1"], tags: Tags.fromObj({ testTagKey: "default" }) },
+                        { types: ["nonExistentEvent2"], tags: Tags.fromObj({ testTagKey: "default" }) }
                     ]),
                     after: SequencePosition.initial()
                 }

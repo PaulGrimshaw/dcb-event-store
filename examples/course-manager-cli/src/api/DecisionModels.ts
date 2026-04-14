@@ -64,6 +64,7 @@ export const StudentAlreadyRegistered = (studentId: string): EventHandlerWithSta
 })
 
 export const NextStudentNumber = (): EventHandlerWithState<StudentWasRegistered, number> => ({
+    tagFilter: Tags.fromObj({ studentNumberIndex: "global" }),
     init: 1,
     onlyLastEvent: true,
     when: {

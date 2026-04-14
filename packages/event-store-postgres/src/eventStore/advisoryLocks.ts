@@ -12,23 +12,16 @@ import { DcbEvent, AppendCondition } from "@dcb-es/event-store"
  *
  * Keys are NOT sorted client-side — Postgres ORDER BY in the acquisition
  * query handles deadlock prevention.
+ *
+ * Precondition: condition items must have types + tags (enforced by validateAppendCondition).
  */
 export function computeLockKeys(events: DcbEvent[], condition?: AppendCondition): bigint[] {
     const keys = new Set<bigint>()
 
-    if (condition) {
-        const query = condition.failIfEventsMatch
-        if (query.isAll) {
-            throw new Error("This event store requires scoped conditions. Query.all() is not supported.")
-        }
-        for (const item of query.items) {
-            if (!item.types?.length || !item.tags || item.tags.values.length === 0) {
-                throw new Error(
-                    "This event store requires every condition query item to specify at least one type and one tag."
-                )
-            }
-            for (const type of item.types) {
-                for (const tag of item.tags.values) {
+    if (condition && !condition.failIfEventsMatch.isAll) {
+        for (const item of condition.failIfEventsMatch.items) {
+            for (const type of item.types ?? []) {
+                for (const tag of item.tags?.values ?? []) {
                     keys.add(fnv1a32(`${type}|${tag}`))
                 }
             }
