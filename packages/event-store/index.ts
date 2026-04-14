@@ -5,6 +5,7 @@ export {
     AppendCondition,
     AppendCommand,
     ReadOptions,
+    SubscribeOptions,
     validateAppendCondition
 } from "./src/eventStore/EventStore"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError"

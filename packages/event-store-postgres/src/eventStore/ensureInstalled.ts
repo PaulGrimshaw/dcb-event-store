@@ -54,6 +54,7 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
             FROM generate_subscripts(p_types, 1) AS i;
 
             SELECT currval(pg_get_serial_sequence('${tableName}', 'sequence_position')) INTO v_pos;
+            PERFORM pg_notify('${tableName}', v_pos::text);
             RETURN v_pos;
         END;
         $fn$ LANGUAGE plpgsql;

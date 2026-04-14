@@ -1,10 +1,18 @@
-import { SequencedEvent, EventStore, AppendCommand, ReadOptions, validateAppendCondition } from "../EventStore"
+import {
+    SequencedEvent,
+    EventStore,
+    AppendCommand,
+    ReadOptions,
+    SubscribeOptions,
+    validateAppendCondition
+} from "../EventStore"
 import { AppendConditionError } from "../AppendConditionError"
 import { SequencePosition } from "../SequencePosition"
 import { Timestamp } from "../Timestamp"
 import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils"
 import { Query } from "../Query"
 import { ensureIsArray } from "../../ensureIsArray"
+import { EventEmitter } from "events"
 
 const offsetPosition = (pos: SequencePosition, n: number) =>
     SequencePosition.fromString(String(parseInt(pos.toString()) + n))
@@ -21,6 +29,7 @@ export class MemoryEventStore implements EventStore {
         append: () => null
     }
 
+    private emitter = new EventEmitter()
     private events: Array<SequencedEvent> = []
 
     constructor(initialEvents: Array<SequencedEvent> = []) {
@@ -98,7 +107,40 @@ export class MemoryEventStore implements EventStore {
         if (allNewEvents.length === 0) throw new Error("Cannot append zero events")
 
         this.events.push(...allNewEvents)
+        this.emitter.emit("append")
         return allNewEvents[allNewEvents.length - 1].position
+    }
+    async *subscribe(query: Query, options?: SubscribeOptions): AsyncGenerator<SequencedEvent> {
+        let position = options?.after ?? SequencePosition.initial()
+        const signal = options?.signal
+
+        try {
+            while (!signal?.aborted) {
+                let hadEvents = false
+                for await (const event of this.read(query, { after: position })) {
+                    yield event
+                    position = event.position
+                    hadEvents = true
+                }
+                if (hadEvents) continue
+
+                // Wait for append or abort
+                await new Promise<void>(resolve => {
+                    const onAppend = () => {
+                        signal?.removeEventListener("abort", onAbort)
+                        resolve()
+                    }
+                    const onAbort = () => {
+                        this.emitter.removeListener("append", onAppend)
+                        resolve()
+                    }
+                    this.emitter.once("append", onAppend)
+                    signal?.addEventListener("abort", onAbort, { once: true })
+                })
+            }
+        } finally {
+            // Generator closed — nothing to clean up for in-memory store
+        }
     }
 }
 
