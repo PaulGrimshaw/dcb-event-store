@@ -1,16 +1,16 @@
-import { Pool, PoolClient } from "pg"
+import { Pool } from "pg"
 
-export const ensureHandlersInstalled = async (pool: Pool | PoolClient, handlerIds: string[], tableName: string) => {
+export const ensureHandlersInstalled = async (pool: Pool, handlerIds: string[], tableName: string) => {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS ${tableName} (
             handler_id TEXT PRIMARY KEY,
             last_sequence_position BIGINT
         );`)
 
-    await registerhandlers(pool, handlerIds, tableName)
+    await registerHandlers(pool, handlerIds, tableName)
 }
 
-export const registerhandlers = async (pool: Pool | PoolClient, handlerIds: string[], tableName: string) => {
+export const registerHandlers = async (pool: Pool, handlerIds: string[], tableName: string) => {
     await pool.query(
         `
         INSERT INTO ${tableName} (handler_id, last_sequence_position)
