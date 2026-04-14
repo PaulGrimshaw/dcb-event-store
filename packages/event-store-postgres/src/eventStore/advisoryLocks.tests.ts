@@ -125,7 +125,7 @@ describe("FNV-1a hash properties (via computeLockKeys)", () => {
         expect(keys1).toEqual(keys2)
     })
 
-    it("produces signed 32-bit bigints", () => {
+    it("produces signed 64-bit bigints", () => {
         const events = Array.from({ length: 200 }, (_, i) => ({
             type: `Type${i}`,
             tags: Tags.fromObj({ id: `${i}` }),
@@ -134,8 +134,8 @@ describe("FNV-1a hash properties (via computeLockKeys)", () => {
         }))
         const keys = computeLockKeys(events)
         for (const k of keys) {
-            expect(k).toBeGreaterThanOrEqual(BigInt(-2147483648))
-            expect(k).toBeLessThanOrEqual(BigInt(2147483647))
+            expect(k).toBeGreaterThanOrEqual(-9223372036854775808n)
+            expect(k).toBeLessThanOrEqual(9223372036854775807n)
         }
     })
 
@@ -147,7 +147,7 @@ describe("FNV-1a hash properties (via computeLockKeys)", () => {
             metadata: {}
         }))
         const keys = computeLockKeys(events)
-        // With 1000 keys in 2^32 space, collisions should be ~0
+        // With 1000 keys in 2^64 space, collisions should be ~0
         expect(keys.length).toBe(1000)
     })
 })

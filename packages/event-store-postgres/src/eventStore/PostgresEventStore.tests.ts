@@ -69,7 +69,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             expect(pos.toString()).toBe("2")
         })
 
-        test("stores and returns data, metadata, tags, type, and timestamp", async () => {
+        test("stores and returns data, metadata, tags, and type", async () => {
             await store.append({
                 events: event("TestEvent", Tags.from(["entity=E1"]), { foo: "bar" }, { userId: "U1" })
             })
@@ -78,7 +78,6 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             expect(events[0].event.data).toEqual({ foo: "bar" })
             expect(events[0].event.metadata).toEqual({ userId: "U1" })
             expect(events[0].event.tags.equals(Tags.from(["entity=E1"]))).toBe(true)
-            expect(events[0].timestamp).toBeDefined()
         })
 
         test("round-trips complex nested data and metadata", async () => {

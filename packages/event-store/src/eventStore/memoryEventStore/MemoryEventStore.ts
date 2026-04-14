@@ -8,7 +8,6 @@ import {
 } from "../EventStore"
 import { AppendConditionError } from "../AppendConditionError"
 import { SequencePosition } from "../SequencePosition"
-import { Timestamp } from "../Timestamp"
 import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils"
 import { Query } from "../Query"
 import { ensureIsArray } from "../../ensureIsArray"
@@ -98,7 +97,6 @@ export class MemoryEventStore implements EventStore {
             for (const ev of evts) {
                 allNewEvents.push({
                     event: ev,
-                    timestamp: Timestamp.now(),
                     position: offsetPosition(lastPosition(this.events), ++eventIndex)
                 })
             }

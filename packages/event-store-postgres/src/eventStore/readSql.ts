@@ -14,16 +14,20 @@ export const readSqlWithCursor = (query: Query, tableName: string, options?: Rea
 const readSql = (query: Query, tableName: string, options?: ReadOptions) => {
     const pm = new ParamManager()
 
+    const filters = [positionFilterClause(pm, options)]
+
+    if (!query.isAll) {
+        filters.push(criteriaClause(query, pm))
+    }
+
     const sql = `
     SELECT
       e.sequence_position,
       e.type,
       e.payload,
-      e.tags,
-      to_char(e."timestamp" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "timestamp"
+      e.tags
     FROM ${tableName} e
-    ${query.isAll ? "" : criteriaJoin(query, pm, tableName, options)}
-    ${whereClause([positionFilterClause(pm, "e", options)])}
+    ${whereClause(filters)}
     ORDER BY e.sequence_position ${options?.backwards ? "DESC" : ""}
     ${options?.limit ? `LIMIT ${pm.add(options.limit)}` : ""};
   `
@@ -35,39 +39,23 @@ const notEmpty = (s: string): boolean => s !== null && s.trim() !== ""
 const tagsFilterClause = (pm: ParamManager, c: QueryItem): string =>
     c.tags && c.tags.length ? `tags && ${pm.add(c.tags.values)}::text[]` : ""
 
-const positionFilterClause = (pm: ParamManager, tableAlias: string, options?: ReadOptions): string =>
-    options?.after
-        ? `${tableAlias ? `${tableAlias}.` : ""}sequence_position ${
-              options.backwards ? "<" : ">"
-          } ${pm.add(options.after.toString())}`
-        : ""
+const positionFilterClause = (pm: ParamManager, options?: ReadOptions): string =>
+    options?.after ? `e.sequence_position ${options.backwards ? "<" : ">"} ${pm.add(options.after.toString())}` : ""
 
 const typesFilterClause = (c: QueryItem, pm: ParamManager): string =>
     c.types?.length ? `type IN (${c.types.map(t => pm.add(t)).join(", ")})` : ""
 
-const itemFilterClause = (c: QueryItem, pm: ParamManager, options?: ReadOptions): string => {
-    const filters = [typesFilterClause(c, pm), tagsFilterClause(pm, c), positionFilterClause(pm, "", options)]
-    return whereClause(filters)
+const itemFilterClause = (c: QueryItem, pm: ParamManager): string => {
+    const parts = [typesFilterClause(c, pm), tagsFilterClause(pm, c)].filter(notEmpty)
+    return parts.length ? `(${parts.join(" AND ")})` : ""
 }
 
-const criteriaJoin = (query: Query, pm: ParamManager, tableName: string, options?: ReadOptions): string => {
+const criteriaClause = (query: Query, pm: ParamManager): string => {
     if (query.isAll) return ""
-    const subqueries = query.items.map(
-        c => `
-      SELECT sequence_position
-      FROM ${tableName}
-      ${itemFilterClause(c, pm, options)}
-    `
-    )
-    return `
-    INNER JOIN (
-      SELECT ec.sequence_position
-      FROM (
-        ${subqueries.join(" UNION ALL ")}
-      ) ec
-      GROUP BY ec.sequence_position
-    ) ec ON ec.sequence_position = e.sequence_position
-  `
+    const clauses = query.items.map(c => itemFilterClause(c, pm)).filter(notEmpty)
+    if (clauses.length === 0) return ""
+    if (clauses.length === 1) return clauses[0]
+    return `(${clauses.join(" OR ")})`
 }
 
 const whereClause = (queryParts: string[]): string => {

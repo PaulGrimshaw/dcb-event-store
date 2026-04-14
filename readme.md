@@ -138,7 +138,6 @@ An event combined with the Sequence Position assigned by the store during append
 ```typescript
 interface SequencedEvent<T extends DcbEvent = DcbEvent> {
     event: T
-    timestamp: Timestamp
     position: SequencePosition
 }
 ```
@@ -218,18 +217,6 @@ pos > zero   // true
 ```
 
 **Validation:** Must be a non-negative integer.
-
-### Timestamp
-
-An immutable ISO 8601 UTC timestamp assigned by the store during append.
-
-```typescript
-const now = Timestamp.now()
-now.toISO  // "2024-01-15T10:30:00.000Z"
-
-Timestamp.isValid("2024-01-15T10:30:00.000Z") // true
-Timestamp.create("2024-01-15T10:30:00.000Z")  // Timestamp
-```
 
 ### EventHandlerWithState
 

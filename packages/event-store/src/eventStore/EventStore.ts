@@ -1,7 +1,6 @@
 import { Query } from "./Query"
 import { SequencePosition } from "./SequencePosition"
 import { Tags } from "./Tags"
-import { Timestamp } from "./Timestamp"
 
 export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown, Mtdta = unknown> {
     type: Tpe
@@ -12,7 +11,6 @@ export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown
 
 export interface SequencedEvent<T extends DcbEvent = DcbEvent> {
     event: T
-    timestamp: Timestamp
     position: SequencePosition
 }
 

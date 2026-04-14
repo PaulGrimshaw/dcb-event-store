@@ -10,14 +10,16 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
     await pool.query(`
         CREATE TABLE IF NOT EXISTS ${tableName} (
           sequence_position BIGSERIAL PRIMARY KEY,
-          type             TEXT NOT NULL,
+          type             TEXT COLLATE "C" NOT NULL,
           tags             TEXT[] NOT NULL,
-          payload          TEXT NOT NULL,
-          "timestamp"      TIMESTAMPTZ DEFAULT now()
+          payload          TEXT NOT NULL
+        ) WITH (
+          autovacuum_freeze_min_age = 10000000,
+          autovacuum_freeze_table_age = 100000000
         );
 
         CREATE INDEX IF NOT EXISTS ${tableName}_type_pos_idx
-        ON ${tableName} (type, sequence_position DESC);
+        ON ${tableName} (type COLLATE "C", sequence_position DESC);
 
         CREATE OR REPLACE FUNCTION ${tableName}_append(
             p_types      text[],

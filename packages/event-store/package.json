@@ -21,11 +21,9 @@
     },
     "author": "Paul Grimshaw",
     "dependencies": {
-        "luxon": "^3.4.4",
         "uuid": "^9.0.1"
     },
     "devDependencies": {
-        "@types/luxon": "^3.4.2",
         "@types/uuid": "^9.0.8"
     },
     "publishConfig": {

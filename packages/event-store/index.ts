@@ -13,7 +13,6 @@ export { AppendConditionError } from "./src/eventStore/AppendConditionError"
 export { Query, QueryItem } from "./src/eventStore/Query"
 export { Tags } from "./src/eventStore/Tags"
 export { SequencePosition } from "./src/eventStore/SequencePosition"
-export { Timestamp } from "./src/eventStore/Timestamp"
 
 export { MemoryEventStore } from "./src/eventStore/memoryEventStore/MemoryEventStore"
 export { streamAllEventsToArray } from "./src/eventStore/streamAllEventsToArray"
