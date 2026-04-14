@@ -53,12 +53,12 @@ describe("buildDecisionModel", () => {
     describe("when event store contains 1 course created event", () => {
         let courseExists: boolean
         beforeEach(async () => {
-            await eventStore.append(
-                new CourseWasRegisteredEvent({
+            await eventStore.append({
+                events: new CourseWasRegisteredEvent({
                     courseId: COURSE_ID,
                     capacity: 10
                 })
-            )
+            })
 
             const result = await buildDecisionModel(eventStore, {
                 courseExists: CourseExists(COURSE_ID)
@@ -91,18 +91,18 @@ describe("buildDecisionModel", () => {
     describe("when event store contains 1 course created event and 1 capacity changed event with CourseCapacity handler", () => {
         let courseCapacity: ReturnType<typeof CourseCapacity>["init"]
         beforeEach(async () => {
-            await eventStore.append(
-                new CourseWasRegisteredEvent({
+            await eventStore.append({
+                events: new CourseWasRegisteredEvent({
                     courseId: COURSE_ID,
                     capacity: 10
                 })
-            )
-            await eventStore.append(
-                new CourseCapacityWasChangedEvent({
+            })
+            await eventStore.append({
+                events: new CourseCapacityWasChangedEvent({
                     courseId: COURSE_ID,
                     newCapacity: 15
                 })
-            )
+            })
             const result = await buildDecisionModel(eventStore, {
                 courseCapacity: CourseCapacity(COURSE_ID)
             })
@@ -142,18 +142,18 @@ describe("buildDecisionModel", () => {
         let courseCapacity: ReturnType<typeof CourseCapacity>["init"]
         let courseExists: boolean
         beforeEach(async () => {
-            await eventStore.append(
-                new CourseWasRegisteredEvent({
+            await eventStore.append({
+                events: new CourseWasRegisteredEvent({
                     courseId: COURSE_ID,
                     capacity: 10
                 })
-            )
-            await eventStore.append(
-                new CourseCapacityWasChangedEvent({
+            })
+            await eventStore.append({
+                events: new CourseCapacityWasChangedEvent({
                     courseId: COURSE_ID,
                     newCapacity: 15
                 })
-            )
+            })
             const result = await buildDecisionModel(eventStore, {
                 courseCapacity: CourseCapacity(COURSE_ID),
                 courseExists: CourseExists(COURSE_ID)
@@ -201,12 +201,12 @@ describe("buildDecisionModel", () => {
 
         beforeEach(async () => {
             eventStore = new MemoryEventStore()
-            await eventStore.append(
-                new CourseWasRegisteredEvent({
+            await eventStore.append({
+                events: new CourseWasRegisteredEvent({
                     courseId: "course-1",
                     capacity: 10
                 })
-            )
+            })
 
             const result = await buildDecisionModel(eventStore, {
                 courseExistsForCourse1: CourseExists("course-1"),

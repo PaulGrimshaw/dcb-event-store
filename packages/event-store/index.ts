@@ -1,4 +1,11 @@
-export { EventStore, DcbEvent, SequencedEvent, AppendCondition, ReadOptions } from "./src/eventStore/EventStore"
+export {
+    EventStore,
+    DcbEvent,
+    SequencedEvent,
+    AppendCondition,
+    AppendCommand,
+    ReadOptions
+} from "./src/eventStore/EventStore"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError"
 
 export { Query, QueryItem } from "./src/eventStore/Query"
@@ -8,6 +15,7 @@ export { Timestamp } from "./src/eventStore/Timestamp"
 
 export { MemoryEventStore } from "./src/eventStore/memoryEventStore/MemoryEventStore"
 export { streamAllEventsToArray } from "./src/eventStore/streamAllEventsToArray"
+export { ensureIsArray } from "./src/ensureIsArray"
 
 export { EventHandler } from "./src/eventHandling/EventHandler"
 export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState"

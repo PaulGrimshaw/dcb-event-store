@@ -27,7 +27,12 @@ export interface ReadOptions {
     limit?: number
 }
 
+export interface AppendCommand {
+    events: DcbEvent | DcbEvent[]
+    condition?: AppendCondition
+}
+
 export interface EventStore {
-    append: (events: DcbEvent | DcbEvent[], condition?: AppendCondition) => Promise<void>
+    append: (command: AppendCommand | AppendCommand[]) => Promise<SequencePosition>
     read: (query: Query, options?: ReadOptions) => AsyncGenerator<SequencedEvent>
 }

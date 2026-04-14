@@ -51,7 +51,7 @@ describe("memoryEventStore.query", () => {
     describe("when event store contains exactly one event", () => {
         beforeEach(async () => {
             eventStore = new MemoryEventStore()
-            await eventStore.append(new EventType1("tag-key-1"))
+            await eventStore.append({ events: new EventType1("tag-key-1") })
         })
 
         test("should return a single event when read forward", async () => {
@@ -68,8 +68,8 @@ describe("memoryEventStore.query", () => {
     describe("when event store contains two events", () => {
         beforeEach(async () => {
             eventStore = new MemoryEventStore()
-            await eventStore.append(new EventType1("tag-key-1"))
-            await eventStore.append(new EventType2("tag-key-2"))
+            await eventStore.append({ events: new EventType1("tag-key-1") })
+            await eventStore.append({ events: new EventType2("tag-key-2") })
         })
 
         describe("with an after filter applied", () => {
@@ -128,9 +128,9 @@ describe("memoryEventStore.query", () => {
     describe("when event store contains three events", () => {
         beforeEach(async () => {
             eventStore = new MemoryEventStore()
-            await eventStore.append(new EventType1("tag-key-1"))
-            await eventStore.append(new EventType2("tag-key-2"))
-            await eventStore.append(new EventType2("ev-3"))
+            await eventStore.append({ events: new EventType1("tag-key-1") })
+            await eventStore.append({ events: new EventType2("tag-key-2") })
+            await eventStore.append({ events: new EventType2("ev-3") })
         })
 
         test("should return two events of type 'testEvent2' when read forward with event type filter", async () => {

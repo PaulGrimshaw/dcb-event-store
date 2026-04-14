@@ -84,6 +84,21 @@ describe("AppendConditionError", () => {
         )
     })
 
+    test("should have undefined commandIndex when not provided", () => {
+        const error = new AppendConditionError(createAppendCondition())
+        expect(error.commandIndex).toBeUndefined()
+    })
+
+    test("should expose commandIndex when provided", () => {
+        const error = new AppendConditionError(createAppendCondition(), 2)
+        expect(error.commandIndex).toBe(2)
+    })
+
+    test("should include commandIndex in error message when provided", () => {
+        const error = new AppendConditionError(createAppendCondition(), 3)
+        expect(error.message).toBe("Expected Version fail: New events matching appendCondition found. (command 3)")
+    })
+
     test("should preserve appendCondition with Query.all()", () => {
         const condition: AppendCondition = {
             failIfEventsMatch: Query.all(),
