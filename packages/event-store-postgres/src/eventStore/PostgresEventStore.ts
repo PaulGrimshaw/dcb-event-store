@@ -8,6 +8,7 @@ import {
     SequencedEvent,
     SequencePosition,
     ReadOptions,
+    SubscribeOptions,
     Query,
     ensureIsArray,
     validateAppendCondition
@@ -36,6 +37,7 @@ export interface PostgresEventStoreOptions {
 export class PostgresEventStore implements EventStore {
     private tableName: string
     private appendFunctionName: string
+    private notifyChannel: string
     private pool: Pool
     private copyThreshold: number
     private lockStrategy: LockStrategy
@@ -48,6 +50,7 @@ export class PostgresEventStore implements EventStore {
         if (!VALID_IDENTIFIER.test(this.tableName))
             throw new Error(`Invalid table name "${this.tableName}": must match ${VALID_IDENTIFIER}`)
         this.appendFunctionName = `${this.tableName}_append`
+        this.notifyChannel = this.tableName
     }
 
     async ensureInstalled(): Promise<void> {
@@ -72,6 +75,56 @@ export class PostgresEventStore implements EventStore {
             // ROLLBACK closes the read-only transaction — nothing was written
             await client.query("ROLLBACK").catch(() => {})
             client.release()
+        }
+    }
+
+    // ─── Subscribe (live event stream via poll + LISTEN/NOTIFY) ────
+
+    async *subscribe(query: Query, options?: SubscribeOptions): AsyncGenerator<SequencedEvent> {
+        const pollInterval = options?.pollIntervalMs ?? 100
+        let position = options?.after ?? SequencePosition.initial()
+        const signal = options?.signal
+
+        const listener = await this.pool.connect()
+        listener.setMaxListeners(0) // subscribe uses multiple once() listeners over its lifetime
+        let listenerError: Error | null = null
+        listener.on("error", err => {
+            listenerError = err
+        })
+
+        try {
+            await listener.query(`LISTEN ${this.notifyChannel}`)
+
+            while (!signal?.aborted) {
+                let hadEvents = false
+                for await (const event of this.read(query, { after: position })) {
+                    yield event
+                    position = event.position
+                    hadEvents = true
+                }
+
+                if (hadEvents) continue
+                if (listenerError) throw listenerError
+
+                await new Promise<void>(resolve => {
+                    const timeout = setTimeout(resolve, pollInterval)
+                    const onNotification = () => {
+                        clearTimeout(timeout)
+                        signal?.removeEventListener("abort", onAbort)
+                        resolve()
+                    }
+                    const onAbort = () => {
+                        clearTimeout(timeout)
+                        listener.removeListener("notification", onNotification)
+                        resolve()
+                    }
+                    listener.once("notification", onNotification)
+                    signal?.addEventListener("abort", onAbort, { once: true })
+                })
+            }
+        } finally {
+            await listener.query(`UNLISTEN ${this.notifyChannel}`).catch(() => {})
+            listener.release()
         }
     }
 
@@ -140,7 +193,9 @@ export class PostgresEventStore implements EventStore {
             }
 
             await copyEventsToTable(client, this.tableName, evts)
-            return SequencePosition.fromString(String(await getLastPosition(client, this.tableName)))
+            const pos = await getLastPosition(client, this.tableName)
+            await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
+            return SequencePosition.fromString(String(pos))
         })
     }
 
@@ -161,7 +216,9 @@ export class PostgresEventStore implements EventStore {
                 if (failedIdx !== null) throw new AppendConditionError(commands[failedIdx].condition!, failedIdx)
             }
 
-            return SequencePosition.fromString(String(await getLastPosition(client, this.tableName)))
+            const pos = await getLastPosition(client, this.tableName)
+            await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
+            return SequencePosition.fromString(String(pos))
         })
     }
 

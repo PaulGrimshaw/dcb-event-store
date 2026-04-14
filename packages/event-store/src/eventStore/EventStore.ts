@@ -48,7 +48,14 @@ export interface AppendCommand {
     condition?: AppendCondition
 }
 
+export interface SubscribeOptions {
+    after?: SequencePosition
+    pollIntervalMs?: number
+    signal?: AbortSignal
+}
+
 export interface EventStore {
     append: (command: AppendCommand | AppendCommand[]) => Promise<SequencePosition>
     read: (query: Query, options?: ReadOptions) => AsyncGenerator<SequencedEvent>
+    subscribe: (query: Query, options?: SubscribeOptions) => AsyncGenerator<SequencedEvent>
 }
