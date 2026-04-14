@@ -166,7 +166,8 @@ Full reference in [`docs/`](docs/index.md):
 - [Overview](docs/overview.md) — DCB pattern, architecture, data flow
 - [Getting Started](docs/getting-started.md) — setup, running examples, debugging
 - [Core API](docs/core/event-store-interface.md) — EventStore, Tags, Query, decision models
-- [Postgres Adapter](docs/postgres/postgres-event-store.md) — PostgresEventStore, lock strategies, event handling
+- [Postgres Design](docs/postgres/design.md) — how the adapter implements DCBs: scoped locking, condition checking, append strategies
+- [Postgres API](docs/postgres/postgres-event-store.md) — PostgresEventStore, lock strategies, event handling
 - [Examples](docs/examples.md) — walkthrough of both CLI example apps
 - [Internals](docs/internals.md) — implementation details and design decisions
 
