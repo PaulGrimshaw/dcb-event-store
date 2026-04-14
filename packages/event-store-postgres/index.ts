@@ -3,3 +3,5 @@ export type { PostgresEventStoreOptions } from "./src/eventStore/PostgresEventSt
 export type { LockStrategy } from "./src/eventStore/lockStrategy"
 export { advisoryLocks, rowLocks } from "./src/eventStore/lockStrategy"
 export { HandlerCatchup } from "./src/eventHandling/HandlerCatchup"
+export { runHandler } from "./src/eventHandling/runHandler"
+export type { HandlerRunnerOptions, RunningHandler } from "./src/eventHandling/runHandler"

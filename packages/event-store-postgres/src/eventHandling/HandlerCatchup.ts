@@ -4,6 +4,10 @@ import { ensureHandlersInstalled, registerHandlers } from "./ensureHandlersInsta
 
 export type HandlerCheckPoints = Record<string, SequencePosition>
 
+/**
+ * @deprecated Use `runHandler()` instead — subscribe-based, atomic bookmark+projection,
+ * with NOTIFY on bookmark advance for `waitUntilProcessed()` support.
+ */
 export class HandlerCatchup {
     private tableName: string
 
