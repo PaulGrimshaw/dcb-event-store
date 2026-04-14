@@ -28,7 +28,7 @@ export async function copyEventsToTable(
             for (const evt of events) {
                 const tags = formatTagsForCopy(evt.tags.values)
                 const payload = escapeCopyText(serializePayload(evt))
-                yield `${evt.type}\t${tags}\t${payload}\n`
+                yield `${escapeCopyText(evt.type)}\t${tags}\t${payload}\n`
             }
         })()
     )
@@ -54,7 +54,9 @@ export async function copyConditionsToTempTable(client: PoolClient, conditions: 
         Readable.from(
             (function* () {
                 for (const c of conditions) {
-                    yield `${c.cmdIdx}\t{${c.types.join(",")}}\t{${c.tags.join(",")}}\t${c.afterPos}\n`
+                    const types = c.types.map(t => `"${escapeCopyQuoted(t)}"`).join(",")
+                    const tags = c.tags.map(t => `"${escapeCopyQuoted(t)}"`).join(",")
+                    yield `${c.cmdIdx}\t{${types}}\t{${tags}}\t${c.afterPos}\n`
                 }
             })()
         ),
@@ -111,6 +113,9 @@ function escapeCopyQuoted(value: string): string {
             case 0:
                 result += "\\0"
                 break // null
+            case 9:
+                result += "\\t"
+                break // tab
             case 10:
                 result += "\\n"
                 break // newline
