@@ -107,7 +107,7 @@ export class PostgresEventStore implements EventStore {
                     payloads,
                     lockKeys,
                     condition ? serializeConditionItems(condition) : null,
-                    condition?.after ? parseInt(condition.after.toString()) : null
+                    condition ? parseInt(condition.after?.toString() ?? "0") : null
                 ]
             )
             return SequencePosition.fromString(String(result.rows[0].pos))

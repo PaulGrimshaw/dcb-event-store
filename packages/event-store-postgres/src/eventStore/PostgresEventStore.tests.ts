@@ -553,6 +553,171 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
         })
     })
 
+    // ─── APPEND CONDITION ERROR PROPERTIES ─────────────────────────
+
+    describe("AppendConditionError properties", () => {
+        test("error has correct name and exposes the condition", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            const condition = scopedCondition(["A"], Tags.fromObj({ e: "1" }), SequencePosition.initial())
+            try {
+                await store.append({ events: event("A", Tags.fromObj({ e: "1" })), condition })
+                fail("Expected AppendConditionError")
+            } catch (error) {
+                expect(error).toBeInstanceOf(AppendConditionError)
+                expect(error).toBeInstanceOf(Error)
+                const e = error as AppendConditionError
+                expect(e.name).toBe("AppendConditionError")
+                expect(e.appendCondition).toBe(condition)
+                expect(e.appendCondition.failIfEventsMatch).toBe(condition.failIfEventsMatch)
+                expect(e.appendCondition.after).toBe(condition.after)
+            }
+        })
+
+        test("multi-command error includes commandIndex", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            try {
+                await store.append([
+                    { events: [event("B", Tags.fromObj({ e: "2" }))] },
+                    {
+                        events: [event("A", Tags.fromObj({ e: "1" }))],
+                        condition: scopedCondition(["A"], Tags.fromObj({ e: "1" }), SequencePosition.initial())
+                    }
+                ])
+                fail("Expected AppendConditionError")
+            } catch (error) {
+                expect((error as AppendConditionError).commandIndex).toBe(1)
+            }
+        })
+    })
+
+    // ─── OPTIONAL AFTER (undefined) ─────────────────────────────────
+
+    describe("condition with after undefined", () => {
+        test("condition without after matches all positions", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            const condition: AppendCondition = {
+                failIfEventsMatch: Query.fromItems([{ types: ["A"], tags: Tags.fromObj({ e: "1" }) }])
+            }
+            await expect(store.append({ events: event("A", Tags.fromObj({ e: "1" })), condition })).rejects.toThrow(
+                AppendConditionError
+            )
+        })
+
+        test("condition without after succeeds when no matching events", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            const condition: AppendCondition = {
+                failIfEventsMatch: Query.fromItems([{ types: ["B"], tags: Tags.fromObj({ e: "1" }) }])
+            }
+            await store.append({ events: event("B", Tags.fromObj({ e: "1" })), condition })
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events.length).toBe(2)
+        })
+    })
+
+    // ─── TAG-ONLY QUERIES ───────────────────────────────────────────
+
+    describe("tag-only queries (no types filter)", () => {
+        test("reads events matching by tag only", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ env: "prod" })) })
+            await store.append({ events: event("B", Tags.fromObj({ env: "prod" })) })
+            await store.append({ events: event("C", Tags.fromObj({ env: "staging" })) })
+            const events = await streamAllEventsToArray(
+                store.read(Query.fromItems([{ tags: Tags.fromObj({ env: "prod" }) }]))
+            )
+            expect(events.length).toBe(2)
+            expect(events[0].event.type).toBe("A")
+            expect(events[1].event.type).toBe("B")
+        })
+
+        test("tag-only query returns events across different types", async () => {
+            await store.append({ events: event("Order", Tags.from(["region=EU"])) })
+            await store.append({ events: event("Invoice", Tags.from(["region=EU"])) })
+            await store.append({ events: event("Order", Tags.from(["region=US"])) })
+            const events = await streamAllEventsToArray(
+                store.read(Query.fromItems([{ tags: Tags.from(["region=EU"]) }]))
+            )
+            expect(events.length).toBe(2)
+        })
+    })
+
+    // ─── READ WITH LIMIT + FILTERS ──────────────────────────────────
+
+    describe("read with limit and type filter", () => {
+        beforeEach(async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            await store.append({ events: event("B", Tags.fromObj({ e: "2" })) })
+            await store.append({ events: event("B", Tags.fromObj({ e: "3" })) })
+        })
+
+        test("limit with type filter forward", async () => {
+            const events = await streamAllEventsToArray(store.read(Query.fromItems([{ types: ["B"] }]), { limit: 1 }))
+            expect(events.length).toBe(1)
+            expect(events[0].event.type).toBe("B")
+            expect(events[0].event.tags.equals(Tags.fromObj({ e: "2" }))).toBe(true)
+        })
+
+        test("limit with type filter backward", async () => {
+            const events = await streamAllEventsToArray(
+                store.read(Query.fromItems([{ types: ["B"] }]), { limit: 1, backwards: true })
+            )
+            expect(events.length).toBe(1)
+            expect(events[0].event.type).toBe("B")
+            expect(events[0].event.tags.equals(Tags.fromObj({ e: "3" }))).toBe(true)
+        })
+
+        test("limit with type filter and after", async () => {
+            const events = await streamAllEventsToArray(
+                store.read(Query.fromItems([{ types: ["B"] }]), {
+                    after: SequencePosition.fromString("2"),
+                    limit: 1
+                })
+            )
+            expect(events.length).toBe(1)
+            expect(events[0].position.toString()).toBe("3")
+        })
+    })
+
+    // ─── TAG OVERLAP FILTER ─────────────────────────────────────────
+
+    describe("tag overlap filtering", () => {
+        test("returns only events whose tags overlap with query tags", async () => {
+            await store.append({ events: event("A", Tags.from(["k=v1"])) })
+            await store.append({ events: event("B", Tags.from(["k=v2"])) })
+            await store.append({ events: event("C", Tags.from(["k=v1", "k=v2"])) })
+            const events = await streamAllEventsToArray(store.read(Query.fromItems([{ tags: Tags.from(["k=v1"]) }])))
+            expect(events.length).toBe(2)
+            expect(events[0].event.type).toBe("A")
+            expect(events[1].event.type).toBe("C")
+        })
+    })
+
+    // ─── TABLE PREFIX ───────────────────────────────────────────────
+
+    describe("table prefix", () => {
+        test("uses prefixed table name and is isolated from default table", async () => {
+            const prefixed = new PostgresEventStore({
+                pool,
+                tablePrefix: "custom",
+                lockStrategy: createStrategy()
+            })
+            await prefixed.ensureInstalled()
+
+            await store.append({ events: event("Default", Tags.fromObj({ e: "1" })) })
+            await prefixed.append({ events: event("Prefixed", Tags.fromObj({ e: "1" })) })
+
+            const defaultEvents = await streamAllEventsToArray(store.read(Query.all()))
+            const prefixedEvents = await streamAllEventsToArray(prefixed.read(Query.all()))
+
+            expect(defaultEvents.length).toBe(1)
+            expect(defaultEvents[0].event.type).toBe("Default")
+            expect(prefixedEvents.length).toBe(1)
+            expect(prefixedEvents[0].event.type).toBe("Prefixed")
+
+            await pool.query("DROP TABLE IF EXISTS custom_events CASCADE")
+            await pool.query("DROP FUNCTION IF EXISTS custom_events_append CASCADE")
+        })
+    })
+
     // ─── IDEMPOTENCY ────────────────────────────────────────────────
 
     describe("idempotency", () => {
@@ -561,6 +726,88 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             await store.ensureInstalled()
             const events = await streamAllEventsToArray(store.read(Query.all()))
             expect(events.length).toBe(1)
+        })
+    })
+
+    // ─── EDGE CASES ─────────────────────────────────────────────────
+
+    describe("edge cases", () => {
+        test("append with empty metadata and data", async () => {
+            await store.append({ events: event("Bare", Tags.fromObj({ e: "1" }), {}, {}) })
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events[0].event.data).toEqual({})
+            expect(events[0].event.metadata).toEqual({})
+        })
+
+        test("append with null values in data", async () => {
+            const data = { a: null, b: [null, 1], c: { nested: null } }
+            await store.append({ events: event("Nulls", Tags.fromObj({ e: "1" }), data) })
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events[0].event.data).toEqual(data)
+        })
+
+        test("append with unicode data", async () => {
+            const data = { emoji: "🎉🚀", cjk: "日本語テスト", arabic: "مرحبا" }
+            await store.append({ events: event("Unicode", Tags.fromObj({ e: "1" }), data) })
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events[0].event.data).toEqual(data)
+        })
+
+        test("read from empty store returns nothing", async () => {
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events.length).toBe(0)
+        })
+
+        test("read with after beyond last position returns nothing", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            const events = await streamAllEventsToArray(
+                store.read(Query.all(), { after: SequencePosition.fromString("999") })
+            )
+            expect(events.length).toBe(0)
+        })
+
+        test("read backwards with after at position 1 returns nothing", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            await store.append({ events: event("B", Tags.fromObj({ e: "2" })) })
+            const events = await streamAllEventsToArray(
+                store.read(Query.all(), { after: SequencePosition.fromString("1"), backwards: true })
+            )
+            expect(events.length).toBe(0)
+        })
+
+        test("large number of tags round-trips correctly", async () => {
+            const tags = Tags.from(Array.from({ length: 50 }, (_, i) => `key${i}=val${i}`))
+            await store.append({ events: event("ManyTags", tags) })
+            const events = await streamAllEventsToArray(store.read(Query.all()))
+            expect(events[0].event.tags.equals(tags)).toBe(true)
+        })
+
+        test("multiple reads interleaved with appends", async () => {
+            await store.append({ events: event("A", Tags.fromObj({ e: "1" })) })
+            const first = await streamAllEventsToArray(store.read(Query.all()))
+            await store.append({ events: event("B", Tags.fromObj({ e: "2" })) })
+            const second = await streamAllEventsToArray(store.read(Query.all()))
+            expect(first.length).toBe(1)
+            expect(second.length).toBe(2)
+        })
+
+        test("position ordering is consistent across reads", async () => {
+            for (let i = 0; i < 10; i++) await store.append({ events: event("A", Tags.fromObj({ e: `${i}` })) })
+            const forward = await streamAllEventsToArray(store.read(Query.all()))
+            const backward = await streamAllEventsToArray(store.read(Query.all(), { backwards: true }))
+            expect(forward.map(e => e.position.toString())).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
+            expect(backward.map(e => e.position.toString())).toEqual([
+                "10",
+                "9",
+                "8",
+                "7",
+                "6",
+                "5",
+                "4",
+                "3",
+                "2",
+                "1"
+            ])
         })
     })
 })

@@ -25,13 +25,13 @@ export function analyseCommands(
             allKeys.add(k)
         }
 
-        if (cmd.condition?.after) {
+        if (cmd.condition) {
             for (const item of cmd.condition.failIfEventsMatch.items) {
                 conditions.push({
                     cmdIdx: i,
                     types: item.types ?? [],
                     tags: item.tags?.values ?? [],
-                    afterPos: parseInt(cmd.condition.after.toString())
+                    afterPos: cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
                 })
             }
         }

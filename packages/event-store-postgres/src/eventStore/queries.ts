@@ -50,9 +50,7 @@ export async function isConditionViolated(
     condition: AppendCondition
 ): Promise<boolean> {
     const { failIfEventsMatch, after } = condition
-    if (!after) return false
-
-    const afterPos = parseInt(after.toString())
+    const afterPos = after ? parseInt(after.toString()) : 0
 
     for (const item of failIfEventsMatch.items) {
         const clauses = [`sequence_position > $1`]
