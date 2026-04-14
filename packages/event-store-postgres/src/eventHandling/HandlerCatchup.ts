@@ -33,15 +33,11 @@ export class HandlerCatchup {
 
             const currentCheckPoints = await this.lockHandlers(client, handlers)
 
-            await Promise.all(
-                Object.entries(handlers).map(
-                    async ([handlerId, handler]) =>
-                        (currentCheckPoints[handlerId] = await this.catchupHandler(
-                            handler,
-                            currentCheckPoints[handlerId]
-                        ))
-                )
-            )
+            // Sequential — each catchupHandler opens its own read cursor from the pool,
+            // so running in parallel would require N+1 connections and risk pool exhaustion.
+            for (const [handlerId, handler] of Object.entries(handlers)) {
+                currentCheckPoints[handlerId] = await this.catchupHandler(handler, currentCheckPoints[handlerId])
+            }
 
             await this.updateBookmarks(client, currentCheckPoints)
             await client.query("COMMIT")
@@ -109,9 +105,12 @@ export class HandlerCatchup {
     ) {
         if (!toSequencePosition) {
             const gen = this.eventStore.read(Query.all(), { backwards: true, limit: 1 })
-            const lastEventInStore = (await gen.next()).value
-            await gen.return(undefined) // release cursor connection
-            toSequencePosition = lastEventInStore?.position ?? SequencePosition.initial()
+            try {
+                const lastEventInStore = (await gen.next()).value
+                toSequencePosition = lastEventInStore?.position ?? SequencePosition.initial()
+            } finally {
+                await gen.return(undefined).catch(() => {})
+            }
         }
 
         const query = Query.fromItems([{ types: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])
