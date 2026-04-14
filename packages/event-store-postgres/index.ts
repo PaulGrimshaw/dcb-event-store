@@ -1,2 +1,5 @@
 export { PostgresEventStore } from "./src/eventStore/PostgresEventStore"
+export type { PostgresEventStoreOptions } from "./src/eventStore/PostgresEventStore"
+export type { LockStrategy } from "./src/eventStore/lockStrategy"
+export { advisoryLocks, rowLocks } from "./src/eventStore/lockStrategy"
 export { HandlerCatchup } from "./src/eventHandling/HandlerCatchup"
