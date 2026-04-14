@@ -5,8 +5,10 @@ import { WaitTimeoutError } from "./WaitTimeoutError"
 /**
  * Wait until a handler's bookmark has reached (or passed) the given position.
  *
- * Fast path: if the bookmark is already at or past the position, returns immediately.
- * Slow path: LISTEN on the bookmark table channel, poll+notify loop until reached or timeout.
+ * Strategy: poll with short backoff first (avoids holding a LISTEN connection
+ * for the common fast case), then fall back to LISTEN+poll for the slow case.
+ * LISTEN is established before the first slow-path check to prevent the
+ * TOCTOU race where a notification fires between check and LISTEN.
  */
 export async function waitUntilProcessed(
     pool: Pool,
@@ -16,17 +18,25 @@ export async function waitUntilProcessed(
 ): Promise<void> {
     const timeoutMs = options?.timeoutMs ?? 5000
     const tableName = options?.bookmarkTableName ?? "_handler_bookmarks"
+    const deadline = Date.now() + timeoutMs
 
-    // Fast path
+    // Fast poll phase — most events process in <50ms, so avoid holding a LISTEN
+    // connection for the common case. Three quick checks with backoff.
+    const pollDelays = [5, 15, 30]
+    for (const delay of pollDelays) {
+        if (await hasReachedPosition(pool, tableName, handlerName, position)) return
+        if (Date.now() + delay > deadline) break
+        await new Promise(r => setTimeout(r, delay))
+    }
     if (await hasReachedPosition(pool, tableName, handlerName, position)) return
 
-    // Slow path: LISTEN + poll
+    // Slow path: LISTEN first, then check — prevents lost notifications
     const client = await pool.connect()
     try {
         await client.query(`LISTEN ${tableName}`)
 
-        const deadline = Date.now() + timeoutMs
         while (Date.now() < deadline) {
+            // Check AFTER LISTEN is established — no TOCTOU race
             if (await hasReachedPosition(pool, tableName, handlerName, position)) return
 
             const remaining = deadline - Date.now()
@@ -48,6 +58,7 @@ export async function waitUntilProcessed(
     }
 }
 
+// pool.query() internally acquires and releases its own connection
 async function hasReachedPosition(
     pool: Pool,
     tableName: string,
