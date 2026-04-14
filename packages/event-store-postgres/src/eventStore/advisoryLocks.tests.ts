@@ -53,32 +53,8 @@ describe("computeLockKeys", () => {
         expect(shared.length).toBeGreaterThan(0)
     })
 
-    it("rejects Query.all() conditions", () => {
-        const event = { type: "Foo", tags: Tags.fromObj({ x: "1" }), data: {}, metadata: {} }
-        const cond = { failIfEventsMatch: Query.all(), after: SequencePosition.initial() }
-
-        expect(() => computeLockKeys([event], cond)).toThrow("Query.all() is not supported")
-    })
-
-    it("rejects condition items missing types", () => {
-        const event = { type: "Foo", tags: Tags.fromObj({ x: "1" }), data: {}, metadata: {} }
-        const cond = {
-            failIfEventsMatch: Query.fromItems([{ tags: Tags.fromObj({ x: "1" }) }]),
-            after: SequencePosition.initial()
-        }
-
-        expect(() => computeLockKeys([event], cond)).toThrow("at least one type and one tag")
-    })
-
-    it("rejects condition items missing tags", () => {
-        const event = { type: "Foo", tags: Tags.fromObj({ x: "1" }), data: {}, metadata: {} }
-        const cond = {
-            failIfEventsMatch: Query.fromItems([{ types: ["Foo"] }]),
-            after: SequencePosition.initial()
-        }
-
-        expect(() => computeLockKeys([event], cond)).toThrow("at least one type and one tag")
-    })
+    // Validation of types+tags is now enforced globally by validateAppendCondition
+    // at the store level. computeLockKeys trusts its precondition.
 
     it("returns unique bigint keys (no bucketing)", () => {
         const events = Array.from({ length: 100 }, (_, i) => ({

@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg"
+import { Pool } from "pg"
 import { Api } from "./Api"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore } from "@dcb-es/event-store-postgres"
@@ -12,25 +12,16 @@ const COURSE_1 = {
 describe("EventSourcedApi", () => {
     let pool: Pool
     let api: Api
-    let client: PoolClient
 
     beforeAll(async () => {
         pool = await getTestPgDatabasePool()
-        const eventStore = new PostgresEventStore(pool)
+        const eventStore = new PostgresEventStore({ pool })
         await eventStore.ensureInstalled()
-    })
-
-    beforeEach(async () => {
-        client = await pool.connect()
-        await client.query("BEGIN transaction isolation level serializable")
-        const eventStore = new PostgresEventStore(client)
         api = new Api(eventStore)
     })
 
     afterEach(async () => {
-        client.query("ROLLBACK;")
-        client.release()
-        await client.query("DELETE FROM events")
+        await pool.query("DELETE FROM events")
     })
 
     afterAll(async () => {

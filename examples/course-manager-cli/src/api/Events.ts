@@ -20,7 +20,9 @@ export class StudentWasRegistered implements DcbEvent {
     public metadata: unknown = {}
 
     constructor({ studentId, name, studentNumber }: { studentId: string; name: string; studentNumber: number }) {
-        this.tags = Tags.fromObj({ studentId })
+        // studentNumberIndex tag enables scoped locking for the NextStudentNumber decision model.
+        // Without it, the global student number query has no tag to lock on.
+        this.tags = Tags.fromObj({ studentId, studentNumberIndex: "global" })
         this.data = { studentId, name, studentNumber }
     }
 }

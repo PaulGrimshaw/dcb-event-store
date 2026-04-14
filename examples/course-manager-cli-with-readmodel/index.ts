@@ -14,14 +14,14 @@ import { HandlerCatchup, PostgresEventStore } from "@dcb-es/event-store-postgres
     }
 
     const pool = new Pool(postgresConfig)
-    const eventStore = new PostgresEventStore(pool)
+    const eventStore = new PostgresEventStore({ pool })
     await eventStore.ensureInstalled()
 
     const handlerCatchup = new HandlerCatchup(pool, eventStore)
     await handlerCatchup.ensureInstalled(Object.keys(setupHandlers(pool)))
 
     await installPostgresCourseSubscriptionsRepository(pool)
-    const api = new Api(pool)
+    const api = new Api(pool, eventStore, handlerCatchup)
 
     await startCli(api)
 })()

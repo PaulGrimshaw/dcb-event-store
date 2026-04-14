@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg"
+import { Pool } from "pg"
 import {
     Course,
     installPostgresCourseSubscriptionsRepository,
@@ -24,32 +24,24 @@ describe("EventSourcedApi", () => {
     let pool: Pool
     let repository: ReturnType<typeof PostgresCourseSubscriptionsRepository>
     let api: Api
-    let client: PoolClient
 
     beforeAll(async () => {
         pool = await getTestPgDatabasePool()
-        const eventStore = new PostgresEventStore(pool)
+        const eventStore = new PostgresEventStore({ pool })
         await eventStore.ensureInstalled()
         await installPostgresCourseSubscriptionsRepository(pool)
-        api = new Api(pool)
-    })
-
-    beforeEach(async () => {
-        client = await pool.connect()
-        const handlerCatchup = new HandlerCatchup(pool, new PostgresEventStore(pool))
-        await handlerCatchup.ensureInstalled(Object.keys(setupHandlers(client)))
-
-        await client.query("BEGIN transaction isolation level serializable")
-        repository = PostgresCourseSubscriptionsRepository(client)
+        const handlerCatchup = new HandlerCatchup(pool, eventStore)
+        await handlerCatchup.ensureInstalled(Object.keys(setupHandlers(pool)))
+        api = new Api(pool, eventStore, handlerCatchup)
+        repository = PostgresCourseSubscriptionsRepository(pool)
     })
 
     afterEach(async () => {
-        client.query("ROLLBACK;")
-        client.release()
         await pool.query("TRUNCATE table events")
         await pool.query("TRUNCATE table courses")
         await pool.query("TRUNCATE table students")
         await pool.query("TRUNCATE table subscriptions")
+        await pool.query("UPDATE _handler_bookmarks SET last_sequence_position = 0")
     })
 
     afterAll(async () => {
@@ -98,7 +90,6 @@ describe("EventSourcedApi", () => {
 
     describe("with one course and 100 students in database", () => {
         beforeEach(async () => {
-            api = new Api(pool)
             await api.registerCourse({ id: COURSE_1.id, title: COURSE_1.title, capacity: COURSE_1.capacity })
 
             for (let i = 0; i < 100; i++) {

@@ -6,7 +6,7 @@ import { Tags } from "./Tags"
 
 describe("AppendConditionError", () => {
     const createAppendCondition = (ceiling: string = "1"): AppendCondition => ({
-        failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.createEmpty() }]),
+        failIfEventsMatch: Query.fromItems([{ types: ["testEvent1"], tags: Tags.fromObj({ id: "test" }) }]),
         after: SequencePosition.fromString(ceiling)
     })
 

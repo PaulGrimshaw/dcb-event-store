@@ -1,4 +1,4 @@
-import { SequencedEvent, EventStore, AppendCommand, ReadOptions } from "../EventStore"
+import { SequencedEvent, EventStore, AppendCommand, ReadOptions, validateAppendCondition } from "../EventStore"
 import { AppendConditionError } from "../AppendConditionError"
 import { SequencePosition } from "../SequencePosition"
 import { Timestamp } from "../Timestamp"
@@ -78,6 +78,7 @@ export class MemoryEventStore implements EventStore {
             const evts = ensureIsArray(cmd.events)
 
             if (cmd.condition) {
+                validateAppendCondition(cmd.condition)
                 const { failIfEventsMatch, after } = cmd.condition
                 const matchingEvents = getMatchingEvents(failIfEventsMatch, after, snapshot)
                 if (matchingEvents.length > 0) {
