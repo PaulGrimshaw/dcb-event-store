@@ -1,11 +1,10 @@
-import { SequencedEvent, EventStore, AppendCondition, DcbEvent, ReadOptions } from "../EventStore"
+import { SequencedEvent, EventStore, AppendCommand, ReadOptions } from "../EventStore"
 import { AppendConditionError } from "../AppendConditionError"
 import { SequencePosition } from "../SequencePosition"
 import { Timestamp } from "../Timestamp"
 import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils"
 import { Query } from "../Query"
-
-const ensureIsArray = (events: DcbEvent | DcbEvent[]) => (Array.isArray(events) ? events : [events])
+import { ensureIsArray } from "../../ensureIsArray"
 
 const offsetPosition = (pos: SequencePosition, n: number) =>
     SequencePosition.fromString(String(parseInt(pos.toString()) + n))
@@ -66,21 +65,39 @@ export class MemoryEventStore implements EventStore {
         }
     }
 
-    async append(events: DcbEvent | DcbEvent[], appendCondition?: AppendCondition): Promise<void> {
+    async append(command: AppendCommand | AppendCommand[]): Promise<SequencePosition> {
         if (this.testListenerRegistry.append) this.testListenerRegistry.append()
-        const sequencedEvents: Array<SequencedEvent> = ensureIsArray(events).map((ev, i) => ({
-            event: ev,
-            timestamp: Timestamp.now(),
-            position: offsetPosition(lastPosition(this.events), i + 1)
-        }))
 
-        if (appendCondition) {
-            const { failIfEventsMatch, after } = appendCondition
-            const matchingEvents = getMatchingEvents(failIfEventsMatch, after, this.events)
-            if (matchingEvents.length > 0) throw new AppendConditionError(appendCondition)
+        const commands = ensureIsArray(command)
+        const snapshot = [...this.events]
+        const allNewEvents: SequencedEvent[] = []
+        let eventIndex = 0
+
+        for (let i = 0; i < commands.length; i++) {
+            const cmd = commands[i]
+            const evts = ensureIsArray(cmd.events)
+
+            if (cmd.condition) {
+                const { failIfEventsMatch, after } = cmd.condition
+                const matchingEvents = getMatchingEvents(failIfEventsMatch, after, snapshot)
+                if (matchingEvents.length > 0) {
+                    throw new AppendConditionError(cmd.condition, commands.length > 1 ? i : undefined)
+                }
+            }
+
+            for (const ev of evts) {
+                allNewEvents.push({
+                    event: ev,
+                    timestamp: Timestamp.now(),
+                    position: offsetPosition(lastPosition(this.events), ++eventIndex)
+                })
+            }
         }
 
-        this.events.push(...sequencedEvents)
+        if (allNewEvents.length === 0) throw new Error("Cannot append zero events")
+
+        this.events.push(...allNewEvents)
+        return allNewEvents[allNewEvents.length - 1].position
     }
 }
 
