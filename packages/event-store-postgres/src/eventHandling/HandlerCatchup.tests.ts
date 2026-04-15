@@ -1,9 +1,9 @@
 import { Pool } from "pg"
 import { v4 as uuid } from "uuid"
 import { Tags } from "@dcb-es/event-store"
-import { HandlerCatchup } from "./HandlerCatchup"
+import { HandlerCatchup } from "./HandlerCatchup.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
-import { PostgresEventStore } from "../eventStore/PostgresEventStore"
+import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 
 describe("HandlerCatchup", () => {
     let pool: Pool

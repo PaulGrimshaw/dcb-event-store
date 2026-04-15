@@ -13,13 +13,13 @@ import {
     ensureIsArray,
     validateAppendCondition
 } from "@dcb-es/event-store"
-import { dbEventConverter } from "./utils"
-import { readSqlWithCursor } from "./readSql"
-import { ensureInstalled } from "./ensureInstalled"
-import { LockStrategy, advisoryLocks } from "./lockStrategy"
-import { copyEventsToTable, copyConditionsToTempTable } from "./copyWriter"
-import { getHighWaterMark, getLastPosition, checkBatchConditions, isConditionViolated } from "./queries"
-import { analyseCommands } from "./analyseCommands"
+import { dbEventConverter } from "./utils.js"
+import { readSqlWithCursor } from "./readSql.js"
+import { ensureInstalled } from "./ensureInstalled.js"
+import { LockStrategy, advisoryLocks } from "./lockStrategy.js"
+import { copyEventsToTable, copyConditionsToTempTable } from "./copyWriter.js"
+import { getHighWaterMark, getLastPosition, checkBatchConditions, isConditionViolated } from "./queries.js"
+import { analyseCommands } from "./analyseCommands.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000

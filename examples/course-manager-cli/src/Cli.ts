@@ -1,5 +1,5 @@
 import inquirer from "inquirer"
-import { Api } from "./api/Api"
+import { Api } from "./api/Api.js"
 
 export const startCli = async (api: Api) => {
     log("Program started succesfully")

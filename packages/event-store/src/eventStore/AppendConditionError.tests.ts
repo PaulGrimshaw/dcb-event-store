@@ -1,8 +1,8 @@
-import { AppendConditionError } from "./AppendConditionError"
-import { AppendCondition } from "./EventStore"
-import { SequencePosition } from "./SequencePosition"
-import { Query } from "./Query"
-import { Tags } from "./Tags"
+import { AppendConditionError } from "./AppendConditionError.js"
+import { AppendCondition } from "./EventStore.js"
+import { SequencePosition } from "./SequencePosition.js"
+import { Query } from "./Query.js"
+import { Tags } from "./Tags.js"
 
 describe("AppendConditionError", () => {
     const createAppendCondition = (ceiling: string = "1"): AppendCondition => ({

@@ -1,10 +1,10 @@
 import { Pool } from "pg"
 import "source-map-support/register"
-import { startCli } from "./src/Cli"
-import { installPostgresCourseSubscriptionsRepository } from "./src/postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository"
-import { Api, PROJECTION_NAME } from "./src/api/Api"
+import { startCli } from "./src/Cli.js"
+import { installPostgresCourseSubscriptionsRepository } from "./src/postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
+import { Api, PROJECTION_NAME } from "./src/api/Api.js"
 import { PostgresEventStore, runHandler, ensureHandlersInstalled } from "@dcb-es/event-store-postgres"
-import { PostgresCourseSubscriptionsProjection } from "./src/api/PostgresCourseSubscriptionsProjection"
+import { PostgresCourseSubscriptionsProjection } from "./src/api/PostgresCourseSubscriptionsProjection.js"
 ;(async () => {
     const postgresConfig = {
         host: "localhost",

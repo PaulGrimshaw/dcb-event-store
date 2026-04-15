@@ -1,9 +1,9 @@
 {
     "compilerOptions": {
         "forceConsistentCasingInFileNames": true,
-        "module": "CommonJS",
+        "module": "NodeNext",
         "target": "ESNext",
-        "moduleResolution": "node",
+        "moduleResolution": "NodeNext",
         "esModuleInterop": true,
         "allowSyntheticDefaultImports": true,
         "experimentalDecorators": true,

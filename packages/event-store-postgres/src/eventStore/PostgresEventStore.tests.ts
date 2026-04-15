@@ -8,8 +8,8 @@ import {
     streamAllEventsToArray,
     Tags
 } from "@dcb-es/event-store"
-import { PostgresEventStore } from "./PostgresEventStore"
-import { LockStrategy, advisoryLocks, rowLocks } from "./lockStrategy"
+import { PostgresEventStore } from "./PostgresEventStore.js"
+import { LockStrategy, advisoryLocks, rowLocks } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const event = (type: string, tags: Tags, data: unknown = {}, metadata: unknown = {}): DcbEvent => ({

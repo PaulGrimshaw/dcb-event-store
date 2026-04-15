@@ -1,7 +1,7 @@
-import { SequencedEvent } from "../EventStore"
-import { SequencePosition } from "../SequencePosition"
-import { matchTags } from "../../eventHandling/matchTags"
-import { QueryItem } from "../Query"
+import { SequencedEvent } from "../EventStore.js"
+import { SequencePosition } from "../SequencePosition.js"
+import { matchTags } from "../../eventHandling/matchTags.js"
+import { QueryItem } from "../Query.js"
 
 export const isInRange = (
     sequencePosition: SequencePosition,

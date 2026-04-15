@@ -1,5 +1,5 @@
-import { Tags } from "../eventStore/Tags"
-import { matchTags } from "./matchTags"
+import { Tags } from "../eventStore/Tags.js"
+import { matchTags } from "./matchTags.js"
 
 describe("matchTags", () => {
     test("should return true when no tagFilter", () => {

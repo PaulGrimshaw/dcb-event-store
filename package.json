@@ -1,5 +1,6 @@
 {
     "name": "dcb-event-store",
+    "type": "module",
     "private": true,
     "repository": {
         "type": "git",

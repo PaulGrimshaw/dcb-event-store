@@ -1,9 +1,9 @@
-import { MemoryEventStore } from "./MemoryEventStore"
-import { DcbEvent } from "../EventStore"
-import { SequencePosition } from "../SequencePosition"
-import { streamAllEventsToArray } from "../streamAllEventsToArray"
-import { Tags } from "../Tags"
-import { Query } from "../Query"
+import { MemoryEventStore } from "./MemoryEventStore.js"
+import { DcbEvent } from "../EventStore.js"
+import { SequencePosition } from "../SequencePosition.js"
+import { streamAllEventsToArray } from "../streamAllEventsToArray.js"
+import { Tags } from "../Tags.js"
+import { Query } from "../Query.js"
 
 class EventType1 implements DcbEvent {
     type: "testEvent1" = "testEvent1"

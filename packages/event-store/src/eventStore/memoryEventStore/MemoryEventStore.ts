@@ -5,12 +5,12 @@ import {
     ReadOptions,
     SubscribeOptions,
     validateAppendCondition
-} from "../EventStore"
-import { AppendConditionError } from "../AppendConditionError"
-import { SequencePosition } from "../SequencePosition"
-import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils"
-import { Query } from "../Query"
-import { ensureIsArray } from "../../ensureIsArray"
+} from "../EventStore.js"
+import { AppendConditionError } from "../AppendConditionError.js"
+import { SequencePosition } from "../SequencePosition.js"
+import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils.js"
+import { Query } from "../Query.js"
+import { ensureIsArray } from "../../ensureIsArray.js"
 import { EventEmitter } from "events"
 
 const offsetPosition = (pos: SequencePosition, n: number) =>

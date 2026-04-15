@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { LockStrategy } from "./lockStrategy"
+import { LockStrategy } from "./lockStrategy.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 

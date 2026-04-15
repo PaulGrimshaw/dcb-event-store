@@ -3,7 +3,7 @@ import {
     installPostgresCourseSubscriptionsRepository,
     PostgresCourseSubscriptionsRepository,
     Student
-} from "./PostgresCourseSubscriptionRespository"
+} from "./PostgresCourseSubscriptionRespository.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const COURSE_1 = {
