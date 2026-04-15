@@ -1,6 +1,6 @@
 import { EventHandler, EventStore, Query, SequencePosition, Tags } from "@dcb-es/event-store"
 import { Pool, PoolClient } from "pg"
-import { ensureHandlersInstalled, registerHandlers } from "./ensureHandlersInstalled"
+import { ensureHandlersInstalled, registerHandlers } from "./ensureHandlersInstalled.js"
 
 export type HandlerCheckPoints = Record<string, SequencePosition>
 

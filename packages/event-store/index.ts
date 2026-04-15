@@ -7,17 +7,17 @@ export {
     ReadOptions,
     SubscribeOptions,
     validateAppendCondition
-} from "./src/eventStore/EventStore"
-export { AppendConditionError } from "./src/eventStore/AppendConditionError"
+} from "./src/eventStore/EventStore.js"
+export { AppendConditionError } from "./src/eventStore/AppendConditionError.js"
 
-export { Query, QueryItem } from "./src/eventStore/Query"
-export { Tags } from "./src/eventStore/Tags"
-export { SequencePosition } from "./src/eventStore/SequencePosition"
+export { Query, QueryItem } from "./src/eventStore/Query.js"
+export { Tags } from "./src/eventStore/Tags.js"
+export { SequencePosition } from "./src/eventStore/SequencePosition.js"
 
-export { MemoryEventStore } from "./src/eventStore/memoryEventStore/MemoryEventStore"
-export { streamAllEventsToArray } from "./src/eventStore/streamAllEventsToArray"
-export { ensureIsArray } from "./src/ensureIsArray"
+export { MemoryEventStore } from "./src/eventStore/memoryEventStore/MemoryEventStore.js"
+export { streamAllEventsToArray } from "./src/eventStore/streamAllEventsToArray.js"
+export { ensureIsArray } from "./src/ensureIsArray.js"
 
-export { EventHandler } from "./src/eventHandling/EventHandler"
-export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState"
-export { buildDecisionModel } from "./src/eventHandling/buildDecisionModel"
+export { EventHandler } from "./src/eventHandling/EventHandler.js"
+export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState.js"
+export { buildDecisionModel } from "./src/eventHandling/buildDecisionModel.js"

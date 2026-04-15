@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from "pg"
 import { DcbEvent, AppendCondition } from "@dcb-es/event-store"
-import { computeLockKeys } from "./advisoryLocks"
+import { computeLockKeys } from "./advisoryLocks.js"
 
 /**
  * Strategy for acquiring scope-level locks during event appends.

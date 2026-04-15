@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { Tags, Query, SequencePosition } from "@dcb-es/event-store"
-import { computeLockKeys } from "./advisoryLocks"
+import { computeLockKeys } from "./advisoryLocks.js"
 
 describe("computeLockKeys", () => {
     it("isolated scopes produce different keys", () => {

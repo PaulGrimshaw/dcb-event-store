@@ -1,6 +1,6 @@
-import { Query } from "./Query"
-import { SequencePosition } from "./SequencePosition"
-import { Tags } from "./Tags"
+import { Query } from "./Query.js"
+import { SequencePosition } from "./SequencePosition.js"
+import { Tags } from "./Tags.js"
 
 export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown, Mtdta = unknown> {
     type: Tpe

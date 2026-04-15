@@ -5,8 +5,8 @@ import {
     StudentWasRegistered,
     StudentWasSubscribedEvent,
     StudentWasUnsubscribedEvent
-} from "./Events"
-import { PostgresCourseSubscriptionsRepository } from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository"
+} from "./Events.js"
+import { PostgresCourseSubscriptionsRepository } from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
 import { Pool, PoolClient } from "pg"
 import { EventHandler } from "@dcb-es/event-store"
 

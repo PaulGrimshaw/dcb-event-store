@@ -1,10 +1,10 @@
-import { buildDecisionModel } from "./buildDecisionModel"
-import { CourseCapacity, CourseExists } from "./buildDecisionModel.tests.handlers"
-import { CourseCapacityWasChangedEvent, CourseWasRegisteredEvent } from "./buildDecisionModel.tests.events"
-import { MemoryEventStore } from "../eventStore/memoryEventStore/MemoryEventStore"
-import { AppendCondition } from "../eventStore/EventStore"
-import { Tags } from "../eventStore/Tags"
-import { QueryItem } from "../eventStore/Query"
+import { buildDecisionModel } from "./buildDecisionModel.js"
+import { CourseCapacity, CourseExists } from "./buildDecisionModel.tests.handlers.js"
+import { CourseCapacityWasChangedEvent, CourseWasRegisteredEvent } from "./buildDecisionModel.tests.events.js"
+import { MemoryEventStore } from "../eventStore/memoryEventStore/MemoryEventStore.js"
+import { AppendCondition } from "../eventStore/EventStore.js"
+import { Tags } from "../eventStore/Tags.js"
+import { QueryItem } from "../eventStore/Query.js"
 
 const COURSE_ID = "course-1"
 

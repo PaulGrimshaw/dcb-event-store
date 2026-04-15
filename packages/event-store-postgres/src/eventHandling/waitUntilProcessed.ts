@@ -1,6 +1,6 @@
 import { Pool } from "pg"
 import { SequencePosition } from "@dcb-es/event-store"
-import { WaitTimeoutError } from "./WaitTimeoutError"
+import { WaitTimeoutError } from "./WaitTimeoutError.js"
 
 /**
  * Wait until a handler's bookmark has reached (or passed) the given position.

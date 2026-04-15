@@ -1,11 +1,11 @@
-import { Tags } from "../eventStore/Tags"
-import { EventHandlerWithState } from "./EventHandlerWithState"
+import { Tags } from "../eventStore/Tags.js"
+import { EventHandlerWithState } from "./EventHandlerWithState.js"
 import {
     CourseWasRegisteredEvent,
     CourseCapacityWasChangedEvent,
     StudentWasSubscribedEvent,
     StudentWasUnsubscribedEvent
-} from "./buildDecisionModel.tests.events"
+} from "./buildDecisionModel.tests.events.js"
 
 export const CourseExists = (courseId: string): EventHandlerWithState<CourseWasRegisteredEvent, boolean> => ({
     tagFilter: Tags.fromObj({ courseId }),

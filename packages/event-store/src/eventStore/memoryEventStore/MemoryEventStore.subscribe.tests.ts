@@ -1,8 +1,8 @@
-import { MemoryEventStore } from "./MemoryEventStore"
-import { DcbEvent, SequencedEvent } from "../EventStore"
-import { SequencePosition } from "../SequencePosition"
-import { Tags } from "../Tags"
-import { Query } from "../Query"
+import { MemoryEventStore } from "./MemoryEventStore.js"
+import { DcbEvent, SequencedEvent } from "../EventStore.js"
+import { SequencePosition } from "../SequencePosition.js"
+import { Tags } from "../Tags.js"
+import { Query } from "../Query.js"
 
 const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
     type,

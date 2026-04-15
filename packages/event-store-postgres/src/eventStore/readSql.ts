@@ -1,5 +1,5 @@
 import { Query, QueryItem, ReadOptions } from "@dcb-es/event-store"
-import { ParamManager } from "./utils"
+import { ParamManager } from "./utils.js"
 
 export const readSqlWithCursor = (query: Query, tableName: string, options?: ReadOptions) => {
     const { sql, params } = readSql(query, tableName, options)

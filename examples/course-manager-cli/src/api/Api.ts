@@ -6,7 +6,7 @@ import {
     StudentWasUnsubscribedEvent,
     CourseCapacityWasChangedEvent,
     CourseTitleWasChangedEvent
-} from "./Events"
+} from "./Events.js"
 
 import {
     CourseCapacity,
@@ -16,7 +16,7 @@ import {
     StudentAlreadyRegistered,
     StudentAlreadySubscribed,
     StudentSubscriptions
-} from "./DecisionModels"
+} from "./DecisionModels.js"
 import { EventStore } from "@dcb-es/event-store"
 
 const STUDENT_SUBSCRIPTION_LIMIT = 5

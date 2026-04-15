@@ -1,6 +1,6 @@
 import { AppendCommand, DcbEvent, ensureIsArray } from "@dcb-es/event-store"
-import { LockStrategy } from "./lockStrategy"
-import { ConditionRow } from "./copyWriter"
+import { LockStrategy } from "./lockStrategy.js"
+import { ConditionRow } from "./copyWriter.js"
 
 /** Single pass over commands — extracts lock keys, conditions, and total event count. */
 export function analyseCommands(

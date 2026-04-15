@@ -1,8 +1,8 @@
 import { Pool } from "pg"
 import { DcbEvent, Query, SequencePosition, SequencedEvent, Tags } from "@dcb-es/event-store"
-import { PostgresEventStore } from "./PostgresEventStore"
-import { advisoryLocks, rowLocks } from "./lockStrategy"
-import { LockStrategy } from "./lockStrategy"
+import { PostgresEventStore } from "./PostgresEventStore.js"
+import { advisoryLocks, rowLocks } from "./lockStrategy.js"
+import { LockStrategy } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({

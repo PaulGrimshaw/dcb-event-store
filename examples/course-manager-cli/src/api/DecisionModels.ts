@@ -6,7 +6,7 @@ import {
     StudentWasUnsubscribedEvent,
     StudentWasRegistered,
     CourseTitleWasChangedEvent
-} from "./Events"
+} from "./Events.js"
 
 export const CourseExists = (courseId: string): EventHandlerWithState<CourseWasRegisteredEvent, boolean> => ({
     tagFilter: Tags.fromObj({ courseId }),

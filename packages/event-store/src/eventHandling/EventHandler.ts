@@ -1,5 +1,5 @@
-import { DcbEvent, SequencedEvent } from "../eventStore/EventStore"
-import { Tags } from "../eventStore/Tags"
+import { DcbEvent, SequencedEvent } from "../eventStore/EventStore.js"
+import { Tags } from "../eventStore/Tags.js"
 
 export interface EventHandler<TEvents extends DcbEvent<string, Tags, unknown, unknown>, TTags extends Tags = Tags> {
     tagFilter?: Partial<TTags>

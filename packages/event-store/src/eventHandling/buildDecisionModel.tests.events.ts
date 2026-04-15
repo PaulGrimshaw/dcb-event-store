@@ -1,5 +1,5 @@
-import { DcbEvent } from "../eventStore/EventStore"
-import { Tags } from "../eventStore/Tags"
+import { DcbEvent } from "../eventStore/EventStore.js"
+import { Tags } from "../eventStore/Tags.js"
 
 export class CourseWasRegisteredEvent implements DcbEvent {
     public type: "courseWasRegistered" = "courseWasRegistered"
