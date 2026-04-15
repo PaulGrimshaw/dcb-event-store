@@ -36,6 +36,19 @@
     "bugs": {
         "url": "https://github.com/kraken-tech/dcb-event-store/issues"
     },
+    "keywords": [
+        "event-sourcing",
+        "event-store",
+        "dcb",
+        "dynamic-consistency-boundary",
+        "postgres",
+        "cqrs",
+        "typescript"
+    ],
+    "homepage": "https://github.com/kraken-tech/dcb-event-store#readme",
+    "bugs": {
+        "url": "https://github.com/kraken-tech/dcb-event-store/issues"
+    },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/kraken-tech/dcb-event-store.git",
