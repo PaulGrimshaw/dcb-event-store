@@ -11,18 +11,19 @@
         "build": "tsc -p tsconfig.json",
         "watch": "tsc -w -p tsconfig.json",
         "lint": "eslint \"**/*.ts\" .",
-        "lint-fix": "eslint \"**/*.ts\" . --fix",
-        "prepare": "yarn build"
+        "lint-fix": "eslint \"**/*.ts\" . --fix"
     },
     "dependencies": {
         "@dcb-es/event-store": "^7.0.0-alpha.1",
         "@dcb-es/event-store-postgres": "^7.0.0-alpha.1",
         "inquirer": "^8.0.0",
-        "interactive-cli": "^1.1.6"
+        "interactive-cli": "^1.1.6",
+        "pg": "^8.20.0"
     },
     "devDependencies": {
         "@testcontainers/postgresql": "^10.9.0",
         "@types/inquirer": "^9.0.7",
+        "@types/pg": "^8.20.0",
         "testcontainers": "^10.9.0"
     }
 }

@@ -13,8 +13,7 @@
         "build": "tsc -p tsconfig.json",
         "watch": "tsc -w -p tsconfig.json",
         "lint": "eslint \"**/*.ts\" .",
-        "lint-fix": "eslint \"**/*.ts\" . --fix",
-        "prepare": "yarn build"
+        "lint-fix": "eslint \"**/*.ts\" . --fix"
     },
     "keywords": [
         "event-sourcing",
