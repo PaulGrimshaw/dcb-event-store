@@ -139,6 +139,27 @@ importers:
         specifier: ^9.0.8
         version: 9.0.8
 
+  packages/event-store-bench:
+    devDependencies:
+      '@dcb-es/event-store':
+        specifier: workspace:*
+        version: link:../event-store
+      '@dcb-es/event-store-postgres':
+        specifier: workspace:*
+        version: link:../event-store-postgres
+      '@testcontainers/postgresql':
+        specifier: ^10.9.0
+        version: 10.28.0
+      '@types/pg':
+        specifier: ^8.11.6
+        version: 8.20.0
+      pg:
+        specifier: ^8.11.5
+        version: 8.20.0
+      testcontainers:
+        specifier: ^10.9.0
+        version: 10.28.0
+
   packages/event-store-postgres:
     dependencies:
       '@dcb-es/event-store':
