@@ -7,9 +7,9 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/sennentech/dcb-event-store.git"
+        "url": "git+https://github.com/kraken-tech/dcb-event-store.git"
     },
-    "license": "MIT",
+    "license": "BSD-3-Clause",
     "dependencies": {
         "source-map-support": "^0.5.21"
     },
