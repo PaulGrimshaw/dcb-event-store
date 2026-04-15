@@ -1,4 +1,4 @@
-# Dynamic Consistency Boundary Event Store
+# Kraken DCB EventStore
 
 A TypeScript/Node.js implementation of the [Dynamic Consistency Boundary (DCB)](https://dcb.events) pattern. DCBs are a technique for enforcing consistency in event-driven systems without relying on rigid transactional boundaries -- establishing consistency requirements dynamically at runtime rather than at design time.
 
