@@ -21,20 +21,8 @@
         "build": "tsc -p tsconfig.json",
         "watch": "tsc -w -p tsconfig.json",
         "lint": "eslint \"**/*.ts\" .",
-        "lint-fix": "eslint \"**/*.ts\" . --fix"
-    },
-    "keywords": [
-        "event-sourcing",
-        "event-store",
-        "dcb",
-        "dynamic-consistency-boundary",
-        "postgres",
-        "cqrs",
-        "typescript"
-    ],
-    "homepage": "https://github.com/kraken-tech/dcb-event-store#readme",
-    "bugs": {
-        "url": "https://github.com/kraken-tech/dcb-event-store/issues"
+        "lint-fix": "eslint \"**/*.ts\" . --fix",
+        "prepublishOnly": "test \"$CHANGESET_PUBLISH\" = '1' || (echo 'Use: pnpm run release (from repo root)' && exit 1)"
     },
     "keywords": [
         "event-sourcing",

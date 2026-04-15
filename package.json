@@ -16,7 +16,7 @@
         "clean": "pnpm -r exec rm -rf dist",
         "changeset": "changeset",
         "version-packages": "changeset version",
-        "release": "pnpm run clean && pnpm run build && pnpm run lint && pnpm run test && changeset publish"
+        "release": "pnpm run clean && pnpm run build && pnpm run lint && pnpm run test && CHANGESET_PUBLISH=1 changeset publish"
     },
     "devDependencies": {
         "@changesets/cli": "^2.30.0",
