@@ -23,7 +23,7 @@ import { analyseCommands } from "./analyseCommands.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
-const COPY_THRESHOLD = 10
+const COPY_THRESHOLD = 10_000
 const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
 
