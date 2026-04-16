@@ -49,36 +49,49 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
             INTO v_hwm;
 
             IF p_cond_cmd_idxs IS NOT NULL AND array_length(p_cond_cmd_idxs, 1) > 0 THEN
-                SET LOCAL enable_hashjoin = off;
-                SET LOCAL enable_mergejoin = off;
-                SET LOCAL plan_cache_mode = force_generic_plan;
-
-                WITH conds AS MATERIALIZED (
-                    SELECT c.cmd_idx, c.ctype,
-                           CASE WHEN c.ctags_str = '' THEN ARRAY[]::text[]
-                                ELSE string_to_array(c.ctags_str, E'\\x1F') END AS ctags,
-                           c.after_pos
-                    FROM unnest(p_cond_cmd_idxs, p_cond_types, p_cond_tags, p_cond_after)
-                         AS c(cmd_idx, ctype, ctags_str, after_pos)
-                )
-                SELECT c.cmd_idx INTO v_failed
-                FROM conds c
-                WHERE EXISTS (
-                    SELECT 1 FROM ${tableName} e
-                    WHERE e.tags @> c.ctags
-                      AND e.type = c.ctype
-                      AND e.sequence_position > c.after_pos
+                IF array_length(p_cond_cmd_idxs, 1) = 1 THEN
+                    PERFORM 1 FROM ${tableName} e
+                    WHERE e.type = p_cond_types[1]
+                      AND e.tags @> CASE WHEN p_cond_tags[1] = '' THEN ARRAY[]::text[]
+                                         ELSE string_to_array(p_cond_tags[1], E'\\x1F') END
+                      AND e.sequence_position > p_cond_after[1]
                       AND e.sequence_position <= v_hwm
-                )
-                ORDER BY c.cmd_idx
-                LIMIT 1;
+                    LIMIT 1;
+                    IF FOUND THEN
+                        RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED:cmd=%', p_cond_cmd_idxs[1];
+                    END IF;
+                ELSE
+                    SET LOCAL enable_hashjoin = off;
+                    SET LOCAL enable_mergejoin = off;
+                    SET LOCAL plan_cache_mode = force_generic_plan;
 
-                SET LOCAL enable_hashjoin = on;
-                SET LOCAL enable_mergejoin = on;
-                SET LOCAL plan_cache_mode = auto;
+                    WITH conds AS MATERIALIZED (
+                        SELECT c.cmd_idx, c.ctype,
+                               CASE WHEN c.ctags_str = '' THEN ARRAY[]::text[]
+                                    ELSE string_to_array(c.ctags_str, E'\\x1F') END AS ctags,
+                               c.after_pos
+                        FROM unnest(p_cond_cmd_idxs, p_cond_types, p_cond_tags, p_cond_after)
+                             AS c(cmd_idx, ctype, ctags_str, after_pos)
+                    )
+                    SELECT c.cmd_idx INTO v_failed
+                    FROM conds c
+                    WHERE EXISTS (
+                        SELECT 1 FROM ${tableName} e
+                        WHERE e.tags @> c.ctags
+                          AND e.type = c.ctype
+                          AND e.sequence_position > c.after_pos
+                          AND e.sequence_position <= v_hwm
+                    )
+                    ORDER BY c.cmd_idx
+                    LIMIT 1;
 
-                IF v_failed IS NOT NULL THEN
-                    RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED:cmd=%', v_failed;
+                    SET LOCAL enable_hashjoin = on;
+                    SET LOCAL enable_mergejoin = on;
+                    SET LOCAL plan_cache_mode = auto;
+
+                    IF v_failed IS NOT NULL THEN
+                        RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED:cmd=%', v_failed;
+                    END IF;
                 END IF;
             END IF;
 
