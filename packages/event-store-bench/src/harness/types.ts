@@ -1,57 +1,8 @@
-import { DcbEvent, AppendCondition, Query, ReadOptions, EventStore } from "@dcb-es/event-store"
-
-// ─── Factory ───────────────────────────────────────────────────────
+import { EventStore } from "@dcb-es/event-store"
 
 export type EventStoreFactory = (runId: string) => EventStore | Promise<EventStore>
 
 export type ThresholdFactory = (runId: string, copyThreshold: number) => EventStore | Promise<EventStore>
-
-// ─── Scenario Configuration ─────────────────────────────────────────
-
-export interface ScenarioConfig {
-    name: string
-    description: string
-    workers: WorkerConfig[]
-    durationMs: number
-    warmupMs?: number
-}
-
-export type WorkerConfig = WriteWorkerConfig | ReadWorkerConfig | ImportWorkerConfig
-
-export interface WriteWorkerConfig {
-    type: "write"
-    count: number
-    eventFactory: EventFactory
-    conditionFactory?: ConditionFactory
-    targetRatePerSec?: number
-}
-
-export interface ReadWorkerConfig {
-    type: "read"
-    count: number
-    queryFactory: QueryFactory
-    readOptions?: ReadOptions
-}
-
-export interface ImportWorkerConfig {
-    type: "import"
-    count: number
-    batchFactory: BatchFactory
-    totalEvents: number
-    batchSize: number
-}
-
-// ─── Factories ──────────────────────────────────────────────────────
-
-export type EventFactory = (workerId: number, iteration: number) => DcbEvent[]
-
-export type ConditionFactory = (workerId: number, iteration: number) => AppendCondition | undefined
-
-export type QueryFactory = (workerId: number, iteration: number) => Query
-
-export type BatchFactory = (workerId: number, batchIndex: number, batchSize: number) => DcbEvent[]
-
-// ─── Results ────────────────────────────────────────────────────────
 
 export interface ScenarioResult {
     scenario: string
@@ -89,4 +40,3 @@ export interface LatencyStats {
     max: number
     mean: number
 }
-
