@@ -45,6 +45,9 @@ importers:
       globals:
         specifier: ^17.5.0
         version: 17.5.0
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
       prettier:
         specifier: ^3.4.2
         version: 3.8.3
@@ -163,8 +166,8 @@ importers:
   packages/event-store-postgres:
     dependencies:
       '@dcb-es/event-store':
-        specifier: ^7.0.0-alpha.1
-        version: 7.0.0-alpha.1
+        specifier: ^7.0.0-alpha.2
+        version: 7.0.0-alpha.2
       pg:
         specifier: ^8.11.5
         version: 8.20.0
@@ -203,6 +206,10 @@ packages:
 
   '@dcb-es/event-store@7.0.0-alpha.1':
     resolution: {integrity: sha512-vQSOo/7vQMg3WHPm5WCJHzXM5N+/nrczDk4kyB4dDjZvettkIlvWbVR3OPfIoMTbyAZOxoPHRk83TzfyKUn73Q==}
+
+  '@dcb-es/event-store@7.0.0-alpha.2':
+    resolution: {integrity: sha512-/LSO9q062QgRgJx8gIk6dEOq/8IpdWsXFnv3FNafeNCCGNsw5MaWqxa9ZHY3VN70kjPnmIKxov6XJURIv2vQXg==}
+    engines: {node: '>=18'}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -1279,6 +1286,11 @@ packages:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
 
+  husky@9.1.7:
+    resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   iconv-lite@0.7.2:
     resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
     engines: {node: '>=0.10.0'}
@@ -2038,6 +2050,10 @@ snapshots:
       - pg-native
 
   '@dcb-es/event-store@7.0.0-alpha.1':
+    dependencies:
+      uuid: 9.0.1
+
+  '@dcb-es/event-store@7.0.0-alpha.2':
     dependencies:
       uuid: 9.0.1
 
@@ -3035,6 +3051,8 @@ snapshots:
   graceful-fs@4.2.11: {}
 
   has-flag@4.0.0: {}
+
+  husky@9.1.7: {}
 
   iconv-lite@0.7.2:
     dependencies:
