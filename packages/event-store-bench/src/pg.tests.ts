@@ -1,6 +1,7 @@
 import { Pool } from "pg"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
-import { createPgFactory, runBenchTest } from "./test-harness"
+import { createPgFactory } from "./pg-lifecycle"
+import { runBenchTest } from "./bench-runner"
 import { standardScenarios } from "./scenarios/registry"
 
 const quickScenarios = standardScenarios.filter(s =>

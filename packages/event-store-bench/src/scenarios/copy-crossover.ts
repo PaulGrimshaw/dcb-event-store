@@ -1,7 +1,6 @@
-import { Tags } from "@dcb-es/event-store"
 import { ThresholdFactory, ScenarioResult } from "../harness/types"
 import { buildScenarioResult } from "../harness/stats"
-import { emptyResult, spawnWorkers } from "../harness/workers"
+import { scopedBatchWriter, spawnWorkers } from "../harness/workers"
 import { ThresholdBenchScenario, StressTestResult } from "./types"
 
 interface Config {
@@ -19,33 +18,13 @@ async function run(factory: ThresholdFactory, config: Config): Promise<StressTes
             const store = await factory(`crossover-b${batchSize}-${route}-${Date.now()}`, copyThreshold)
             const endTime = Date.now() + config.durationPerTierMs
 
-            const workers = await spawnWorkers(config.workerCount, async (id) => {
-                const result = emptyResult(id, "write")
-                const scopeTag = `W${id}`
-                let iteration = 0
-
-                while (Date.now() < endTime) {
-                    const events = Array.from({ length: batchSize }, (_, i) => ({
-                        type: "CrossoverEvent",
-                        tags: Tags.fromObj({ scope: scopeTag }),
-                        data: { seq: iteration * batchSize + i },
-                        metadata: {},
-                    }))
-
-                    const opStart = Date.now()
-                    try {
-                        await store.append({ events })
-                        result.latencies.push(Date.now() - opStart)
-                        result.operations++
-                        result.events += batchSize
-                    } catch {
-                        result.errors++
-                    }
-                    iteration++
-                }
-
-                return result
-            })
+            const workers = await spawnWorkers(config.workerCount, (id) =>
+                scopedBatchWriter(store, id, endTime, {
+                    batchSize,
+                    eventType: "CrossoverEvent",
+                    conditional: false,
+                }),
+            )
 
             scenarios.push(buildScenarioResult(
                 `batch-${batchSize}-${route}`,

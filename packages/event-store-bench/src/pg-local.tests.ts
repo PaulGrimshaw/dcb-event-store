@@ -5,9 +5,8 @@ import {
     createBenchPool,
     createPgFactory,
     createThresholdFactory,
-    runBenchTest,
-    runThresholdBenchTest,
-} from "./test-harness"
+} from "./pg-lifecycle"
+import { runBenchTest, runThresholdBenchTest } from "./bench-runner"
 import { standardScenarios, thresholdScenarios } from "./scenarios/registry"
 
 const BASE_URI = process.env.PG_CONNECTION_STRING ?? "postgresql://localhost:5432/postgres"

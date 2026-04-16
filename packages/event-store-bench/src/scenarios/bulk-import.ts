@@ -1,4 +1,4 @@
-import { Query, streamAllEventsToArray } from "@dcb-es/event-store"
+import { EventStore, Query, streamAllEventsToArray } from "@dcb-es/event-store"
 import { EventStoreFactory } from "../harness/types"
 import { computeLatencyStats } from "../harness/stats"
 import { buildMeterCommands, EVENTS_PER_METER } from "./meter-commands"
@@ -57,7 +57,7 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
 }
 
 async function verify(
-    store: import("@dcb-es/event-store").EventStore,
+    store: EventStore,
     config: Config,
     expectedEvents: number,
     elapsedMs: number,
