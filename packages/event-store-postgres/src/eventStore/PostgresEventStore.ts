@@ -231,7 +231,10 @@ export class PostgresEventStore implements EventStore {
             const result = await this.pool.query(
                 `SELECT ${this.appendFunctionName}_batch($1::bigint[], $2::text[], $3::text[], $4::text[], $5::int[], $6::text[], $7::text[], $8::bigint[]) as pos`,
                 [
-                    lockKeys, types, tags, payloads,
+                    lockKeys,
+                    types,
+                    tags,
+                    payloads,
                     hasConditions ? condCmdIdxs : null,
                     hasConditions ? condTypes : null,
                     hasConditions ? condTags : null,
@@ -295,8 +298,14 @@ export class PostgresEventStore implements EventStore {
                     condAfter.push(c.afterPos)
                 }
                 const failedIdx = await checkConditionsCte(
-                    client, this.tableName, condCmdIdxs, condTypes, condTags, condAfter,
-                    highWaterMark, TAG_DELIMITER
+                    client,
+                    this.tableName,
+                    condCmdIdxs,
+                    condTypes,
+                    condTags,
+                    condAfter,
+                    highWaterMark,
+                    TAG_DELIMITER
                 )
                 if (failedIdx !== null) throw new AppendConditionError(commands[failedIdx].condition!, failedIdx)
             }
@@ -328,4 +337,3 @@ export class PostgresEventStore implements EventStore {
 function serializePayload(evt: DcbEvent): string {
     return `{"data":${JSON.stringify(evt.data)},"metadata":${JSON.stringify(evt.metadata)}}`
 }
-
