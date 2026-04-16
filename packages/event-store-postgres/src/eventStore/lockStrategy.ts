@@ -27,6 +27,15 @@ export function advisoryLocks(): LockStrategy {
     }
 }
 
+/** No locks — relies solely on the condition check for correctness. Use only when callers guarantee no cross-batch contention. */
+export function noLocks(): LockStrategy {
+    return {
+        computeKeys: () => [],
+        acquire: async () => {},
+        generateSpLockBlock: () => "-- no locks"
+    }
+}
+
 /** Row locks — lazy-upserted scope table, RDS or PG Proxy compatible. For Aurora deployments etc. */
 export function rowLocks(): LockStrategy {
     return {

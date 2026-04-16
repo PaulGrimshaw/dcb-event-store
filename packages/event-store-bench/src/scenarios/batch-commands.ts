@@ -25,8 +25,10 @@ async function batchCommandWorker(
 ) {
     const result = emptyResult(workerId, "write")
     let seq = 0
+    let lastPos = SequencePosition.initial()
 
     while (Date.now() < endTime) {
+        const afterPos = lastPos
         const commands: AppendCommand[] = Array.from({ length: commandsPerAppend }, () => {
             const entityId = `W${workerId}-E${seq++}`
             return {
@@ -41,14 +43,14 @@ async function batchCommandWorker(
                         types: ["EntityCreated"],
                         tags: Tags.fromObj({ entity: entityId }),
                     }]),
-                    after: SequencePosition.initial(),
+                    after: afterPos,
                 },
             }
         })
 
         const opStart = Date.now()
         try {
-            await store.append(commands)
+            lastPos = await store.append(commands)
             result.latencies.push(Date.now() - opStart)
             result.operations++
             result.events += commandsPerAppend

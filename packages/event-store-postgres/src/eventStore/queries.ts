@@ -16,28 +16,27 @@ export async function getLastPosition(client: PoolClient, tableName: string): Pr
 }
 
 /**
- * Check if any condition is violated by pre-existing events (before highWaterMark).
- * Uses the _conditions temp table populated by copyConditionsToTempTable.
+ * Check batch conditions using MATERIALIZED CTE + forced nested loop for GIN.
+ * Accepts flat parallel arrays (same encoding as the batch SP).
  * Returns the command index of the first violation, or null if all pass.
  */
-export async function checkBatchConditions(
+export async function checkConditionsCte(
     client: PoolClient,
     tableName: string,
-    highWaterMark: number
+    condCmdIdxs: number[],
+    condTypes: string[],
+    condTags: string[],
+    condAfter: number[],
+    highWaterMark: number,
+    tagDelimiter: string
 ): Promise<number | null> {
+    const fnName = `${tableName}_check_conditions`
     const result = await client.query(
-        `SELECT cmd_idx FROM _conditions c
-         WHERE EXISTS (
-             SELECT 1 FROM ${tableName} e
-             WHERE e.type = ANY(c.cond_types)
-               AND e.tags @> c.cond_tags
-               AND e.sequence_position > c.after_pos
-               AND e.sequence_position <= $1
-         )
-         LIMIT 1`,
-        [highWaterMark]
+        `SELECT ${fnName}($1::int[], $2::text[], $3::text[], $4::bigint[], $5::bigint, $6::text) AS failed_idx`,
+        [condCmdIdxs, condTypes, condTags, condAfter, highWaterMark, tagDelimiter]
     )
-    return (result.rowCount ?? 0) > 0 ? result.rows[0].cmd_idx : null
+    const idx = result.rows[0].failed_idx
+    return idx !== null ? idx : null
 }
 
 /**

@@ -17,13 +17,14 @@ import { dbEventConverter } from "./utils.js"
 import { readSqlWithCursor } from "./readSql.js"
 import { ensureInstalled } from "./ensureInstalled.js"
 import { LockStrategy, advisoryLocks } from "./lockStrategy.js"
-import { copyEventsToTable, copyConditionsToTempTable } from "./copyWriter.js"
-import { getHighWaterMark, getLastPosition, checkBatchConditions, isConditionViolated } from "./queries.js"
+import { copyEventsToTable } from "./copyWriter.js"
+import { getHighWaterMark, getLastPosition, checkConditionsCte, isConditionViolated } from "./queries.js"
 import { analyseCommands } from "./analyseCommands.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
 const COPY_THRESHOLD = 10_000
+const SP_BATCH_LIMIT = 500
 const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
 
@@ -161,15 +162,27 @@ export class PostgresEventStore implements EventStore {
             payloads.push(serializePayload(evt))
         }
 
+        const condTypes: string[] = []
+        const condTags: string[] = []
+        if (condition) {
+            for (const item of condition.failIfEventsMatch.items) {
+                for (const type of item.types ?? []) {
+                    condTypes.push(type)
+                    condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
+                }
+            }
+        }
+
         try {
             const result = await this.pool.query(
-                `SELECT ${this.appendFunctionName}($1::text[], $2::text[], $3::text[], $4::bigint[], $5::jsonb, $6::bigint) as pos`,
+                `SELECT ${this.appendFunctionName}($1::text[], $2::text[], $3::text[], $4::bigint[], $5::text[], $6::text[], $7::bigint) as pos`,
                 [
                     types,
                     tags,
                     payloads,
                     lockKeys,
-                    condition ? serializeConditionItems(condition) : null,
+                    condition ? condTypes : null,
+                    condition ? condTags : null,
                     condition ? parseInt(condition.after?.toString() ?? "0") : null
                 ]
             )
@@ -177,6 +190,61 @@ export class PostgresEventStore implements EventStore {
         } catch (err) {
             if ((err as { message?: string }).message?.includes(CONDITION_VIOLATED_SIGNAL)) {
                 throw new AppendConditionError(condition!)
+            }
+            throw err
+        }
+    }
+
+    /** Stored procedure — single round-trip for batch commands with ≤ copyThreshold total events. */
+    private async appendBatchViaFunction(commands: AppendCommand[], lockKeys: bigint[]): Promise<SequencePosition> {
+        const types: string[] = []
+        const tags: string[] = []
+        const payloads: string[] = []
+        const condCmdIdxs: number[] = []
+        const condTypes: string[] = []
+        const condTags: string[] = []
+        const condAfter: number[] = []
+
+        for (let i = 0; i < commands.length; i++) {
+            const cmd = commands[i]
+            for (const evt of ensureIsArray(cmd.events)) {
+                types.push(evt.type)
+                tags.push(evt.tags.values.join(TAG_DELIMITER))
+                payloads.push(serializePayload(evt))
+            }
+            if (cmd.condition) {
+                const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
+                for (const item of cmd.condition.failIfEventsMatch.items) {
+                    for (const type of item.types ?? []) {
+                        condCmdIdxs.push(i)
+                        condTypes.push(type)
+                        condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
+                        condAfter.push(afterPos)
+                    }
+                }
+            }
+        }
+
+        const hasConditions = condCmdIdxs.length > 0
+
+        try {
+            const result = await this.pool.query(
+                `SELECT ${this.appendFunctionName}_batch($1::bigint[], $2::text[], $3::text[], $4::text[], $5::int[], $6::text[], $7::text[], $8::bigint[]) as pos`,
+                [
+                    lockKeys, types, tags, payloads,
+                    hasConditions ? condCmdIdxs : null,
+                    hasConditions ? condTypes : null,
+                    hasConditions ? condTags : null,
+                    hasConditions ? condAfter : null
+                ]
+            )
+            return SequencePosition.fromString(String(result.rows[0].pos))
+        } catch (err) {
+            const msg = (err as { message?: string }).message ?? ""
+            const match = msg.match(/APPEND_CONDITION_VIOLATED:cmd=(\d+)/)
+            if (match) {
+                const idx = parseInt(match[1])
+                throw new AppendConditionError(commands[idx].condition!, idx)
             }
             throw err
         }
@@ -199,20 +267,37 @@ export class PostgresEventStore implements EventStore {
         })
     }
 
-    /** Batch COPY + temp table — multiple commands with per-command condition checking. */
+    /** Multi-command batch — SP for small batches, COPY for larger ones. */
     private async appendBatch(commands: AppendCommand[]): Promise<SequencePosition> {
         const { totalEvents, lockKeys, conditions, eventIterator } = analyseCommands(commands, this.lockStrategy)
         if (totalEvents === 0) throw new Error("Cannot append zero events")
+
+        if (commands.length <= SP_BATCH_LIMIT && totalEvents <= this.copyThreshold) {
+            return this.appendBatchViaFunction(commands, lockKeys)
+        }
 
         return this.withTransaction(async client => {
             if (lockKeys.length > 0) await this.lockStrategy.acquire(client, lockKeys, this.tableName)
 
             const highWaterMark = await getHighWaterMark(client, this.tableName)
+
             await copyEventsToTable(client, this.tableName, eventIterator())
 
             if (conditions.length > 0) {
-                await copyConditionsToTempTable(client, conditions)
-                const failedIdx = await checkBatchConditions(client, this.tableName, highWaterMark)
+                const condCmdIdxs: number[] = []
+                const condTypes: string[] = []
+                const condTags: string[] = []
+                const condAfter: number[] = []
+                for (const c of conditions) {
+                    condCmdIdxs.push(c.cmdIdx)
+                    condTypes.push(c.type)
+                    condTags.push(c.tags.join(TAG_DELIMITER))
+                    condAfter.push(c.afterPos)
+                }
+                const failedIdx = await checkConditionsCte(
+                    client, this.tableName, condCmdIdxs, condTypes, condTags, condAfter,
+                    highWaterMark, TAG_DELIMITER
+                )
                 if (failedIdx !== null) throw new AppendConditionError(commands[failedIdx].condition!, failedIdx)
             }
 
@@ -244,11 +329,3 @@ function serializePayload(evt: DcbEvent): string {
     return `{"data":${JSON.stringify(evt.data)},"metadata":${JSON.stringify(evt.metadata)}}`
 }
 
-function serializeConditionItems(condition: AppendCondition): string {
-    return JSON.stringify(
-        condition.failIfEventsMatch.items.map(item => ({
-            types: item.types ?? [],
-            tags: item.tags?.values ?? []
-        }))
-    )
-}

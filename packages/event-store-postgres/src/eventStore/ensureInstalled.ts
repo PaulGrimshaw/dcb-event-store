@@ -21,34 +21,49 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
         CREATE INDEX IF NOT EXISTS ${tableName}_type_pos_idx
         ON ${tableName} (type COLLATE "C", sequence_position DESC);
 
+        DROP INDEX IF EXISTS ${tableName}_type_tags_gin;
+
+        CREATE INDEX IF NOT EXISTS ${tableName}_tags_gin
+        ON ${tableName} USING GIN(tags) WITH (fastupdate=off);
+
         CREATE OR REPLACE FUNCTION ${tableName}_append(
-            p_types      text[],
-            p_tags       text[],
-            p_payloads   text[],
-            p_lock_keys  bigint[],
-            p_conditions jsonb,
-            p_after_pos  bigint
+            p_types       text[],
+            p_tags        text[],
+            p_payloads    text[],
+            p_lock_keys   bigint[],
+            p_cond_types  text[],
+            p_cond_tags   text[],
+            p_after_pos   bigint
         ) RETURNS bigint AS $fn$
         DECLARE
-            v_pos bigint;
+            v_pos    bigint;
+            v_i      int;
+            v_ctags  text[];
         BEGIN
             IF p_lock_keys IS NOT NULL AND array_length(p_lock_keys, 1) > 0 THEN
                 ${lockStrategy.generateSpLockBlock(tableName)}
             END IF;
 
-            IF p_after_pos IS NOT NULL AND p_conditions IS NOT NULL THEN
-                IF EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements(p_conditions) AS c
-                    WHERE EXISTS (
-                        SELECT 1 FROM ${tableName} e
-                        WHERE e.type = ANY(ARRAY(SELECT jsonb_array_elements_text(c -> 'types')))
-                          AND e.tags @> ARRAY(SELECT jsonb_array_elements_text(c -> 'tags'))
+            IF p_after_pos IS NOT NULL AND p_cond_types IS NOT NULL AND array_length(p_cond_types, 1) > 0 THEN
+                FOR v_i IN 1..array_length(p_cond_types, 1) LOOP
+                    v_ctags := CASE WHEN p_cond_tags[v_i] = '' THEN ARRAY[]::text[]
+                                    ELSE string_to_array(p_cond_tags[v_i], E'\\x1F') END;
+                    IF v_ctags IS NOT NULL AND array_length(v_ctags, 1) > 0 THEN
+                        PERFORM 1 FROM ${tableName} e
+                        WHERE e.tags @> v_ctags
+                          AND e.type = p_cond_types[v_i]
                           AND e.sequence_position > p_after_pos
-                    )
-                ) THEN
-                    RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED';
-                END IF;
+                        LIMIT 1;
+                    ELSE
+                        PERFORM 1 FROM ${tableName} e
+                        WHERE e.type = p_cond_types[v_i]
+                          AND e.sequence_position > p_after_pos
+                        LIMIT 1;
+                    END IF;
+                    IF FOUND THEN
+                        RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED';
+                    END IF;
+                END LOOP;
             END IF;
 
             INSERT INTO ${tableName} (type, tags, payload)
@@ -60,6 +75,119 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
             RETURN v_pos;
         END;
         $fn$ LANGUAGE plpgsql;
+    `)
+
+    await pool.query(`
+        CREATE OR REPLACE FUNCTION ${tableName}_append_batch(
+            p_lock_keys      bigint[],
+            p_types          text[],
+            p_tags           text[],
+            p_payloads       text[],
+            p_cond_cmd_idxs  int[],
+            p_cond_types     text[],
+            p_cond_tags      text[],
+            p_cond_after     bigint[]
+        ) RETURNS bigint AS $batch$
+        DECLARE
+            v_hwm    bigint;
+            v_pos    bigint;
+            v_failed int;
+        BEGIN
+            IF p_lock_keys IS NOT NULL AND array_length(p_lock_keys, 1) > 0 THEN
+                ${lockStrategy.generateSpLockBlock(tableName)}
+            END IF;
+
+            SELECT COALESCE(pg_sequence_last_value(pg_get_serial_sequence('${tableName}', 'sequence_position')), 0)
+            INTO v_hwm;
+
+            IF p_cond_cmd_idxs IS NOT NULL AND array_length(p_cond_cmd_idxs, 1) > 0 THEN
+                SET LOCAL enable_hashjoin = off;
+                SET LOCAL enable_mergejoin = off;
+                SET LOCAL plan_cache_mode = force_generic_plan;
+
+                WITH conds AS MATERIALIZED (
+                    SELECT c.cmd_idx, c.ctype,
+                           CASE WHEN c.ctags_str = '' THEN ARRAY[]::text[]
+                                ELSE string_to_array(c.ctags_str, E'\\x1F') END AS ctags,
+                           c.after_pos
+                    FROM unnest(p_cond_cmd_idxs, p_cond_types, p_cond_tags, p_cond_after)
+                         AS c(cmd_idx, ctype, ctags_str, after_pos)
+                )
+                SELECT c.cmd_idx INTO v_failed
+                FROM conds c
+                WHERE EXISTS (
+                    SELECT 1 FROM ${tableName} e
+                    WHERE e.tags @> c.ctags
+                      AND e.type = c.ctype
+                      AND e.sequence_position > c.after_pos
+                      AND e.sequence_position <= v_hwm
+                )
+                ORDER BY c.cmd_idx
+                LIMIT 1;
+
+                SET LOCAL enable_hashjoin = on;
+                SET LOCAL enable_mergejoin = on;
+                SET LOCAL plan_cache_mode = auto;
+
+                IF v_failed IS NOT NULL THEN
+                    RAISE EXCEPTION 'APPEND_CONDITION_VIOLATED:cmd=%', v_failed;
+                END IF;
+            END IF;
+
+            INSERT INTO ${tableName} (type, tags, payload)
+            SELECT p_types[i], string_to_array(p_tags[i], E'\\x1F'), p_payloads[i]
+            FROM generate_subscripts(p_types, 1) AS i;
+
+            SELECT currval(pg_get_serial_sequence('${tableName}', 'sequence_position')) INTO v_pos;
+            PERFORM pg_notify('${tableName}', v_pos::text);
+            RETURN v_pos;
+        END;
+        $batch$ LANGUAGE plpgsql;
+    `)
+
+    await pool.query(`
+        CREATE OR REPLACE FUNCTION ${tableName}_check_conditions(
+            p_cmd_idxs   int[],
+            p_types      text[],
+            p_tags       text[],
+            p_after      bigint[],
+            p_hwm        bigint,
+            p_delim      text
+        ) RETURNS int AS $cc$
+        DECLARE
+            v_failed int;
+        BEGIN
+            SET LOCAL enable_hashjoin = off;
+            SET LOCAL enable_mergejoin = off;
+            SET LOCAL plan_cache_mode = force_generic_plan;
+
+            WITH conds AS MATERIALIZED (
+                SELECT c.cmd_idx, c.ctype,
+                       CASE WHEN c.ctags_str = '' THEN ARRAY[]::text[]
+                            ELSE string_to_array(c.ctags_str, p_delim) END AS ctags,
+                       c.after_pos
+                FROM unnest(p_cmd_idxs, p_types, p_tags, p_after)
+                     AS c(cmd_idx, ctype, ctags_str, after_pos)
+            )
+            SELECT c.cmd_idx INTO v_failed
+            FROM conds c
+            WHERE EXISTS (
+                SELECT 1 FROM ${tableName} e
+                WHERE e.tags @> c.ctags
+                  AND e.type = c.ctype
+                  AND e.sequence_position > c.after_pos
+                  AND e.sequence_position <= p_hwm
+            )
+            ORDER BY c.cmd_idx
+            LIMIT 1;
+
+            SET LOCAL enable_hashjoin = on;
+            SET LOCAL enable_mergejoin = on;
+            SET LOCAL plan_cache_mode = auto;
+
+            RETURN v_failed;
+        END;
+        $cc$ LANGUAGE plpgsql;
     `)
 
     if (lockStrategy.ensureSchema) {
