@@ -26,13 +26,16 @@ export function analyseCommands(
         }
 
         if (cmd.condition) {
+            const afterPos = cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
             for (const item of cmd.condition.failIfEventsMatch.items) {
-                conditions.push({
-                    cmdIdx: i,
-                    types: item.types ?? [],
-                    tags: item.tags?.values ?? [],
-                    afterPos: cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
-                })
+                for (const type of item.types ?? []) {
+                    conditions.push({
+                        cmdIdx: i,
+                        type,
+                        tags: item.tags?.values ?? [],
+                        afterPos
+                    })
+                }
             }
         }
     }

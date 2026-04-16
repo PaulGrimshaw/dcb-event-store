@@ -6,7 +6,7 @@ import { DcbEvent } from "@dcb-es/event-store"
 
 export interface ConditionRow {
     cmdIdx: number
-    types: string[]
+    type: string
     tags: string[]
     afterPos: number
 }
@@ -34,34 +34,6 @@ export async function copyEventsToTable(
     )
 
     await pipeline(source, copyStream)
-}
-
-/**
- * Create a temp table and COPY condition rows into it.
- * Used by appendBatch for single-query condition checking against pre-existing events.
- */
-export async function copyConditionsToTempTable(client: PoolClient, conditions: ConditionRow[]): Promise<void> {
-    await client.query(`
-        CREATE TEMP TABLE _conditions (
-            cmd_idx int, cond_types text[], cond_tags text[], after_pos bigint
-        ) ON COMMIT DROP
-    `)
-
-    const condStream = client.query(
-        copyFrom("COPY _conditions (cmd_idx, cond_types, cond_tags, after_pos) FROM STDIN WITH (FORMAT text)")
-    )
-    await pipeline(
-        Readable.from(
-            (function* () {
-                for (const c of conditions) {
-                    const types = c.types.map(t => `"${escapeCopy(t, true)}"`).join(",")
-                    const tags = c.tags.map(t => `"${escapeCopy(t, true)}"`).join(",")
-                    yield `${c.cmdIdx}\t{${types}}\t{${tags}}\t${c.afterPos}\n`
-                }
-            })()
-        ),
-        condStream
-    )
 }
 
 function serializePayload(evt: DcbEvent): string {
