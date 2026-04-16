@@ -1,4 +1,4 @@
-import { LatencyStats, WorkerResult, AggregateMetrics } from "./types"
+import { LatencyStats, WorkerResult, AggregateMetrics, ScenarioResult } from "./types"
 
 export function computeLatencyStats(latencies: number[]): LatencyStats {
     if (latencies.length === 0) {
@@ -45,6 +45,22 @@ export function aggregateResults(
         opsPerSec: Math.round(totalOperations / durationSec),
         eventsPerSec: Math.round(totalEvents / durationSec),
         latency: computeLatencyStats(allLatencies),
+    }
+}
+
+export function buildScenarioResult(
+    scenario: string,
+    description: string,
+    durationMs: number,
+    workers: WorkerResult[],
+): ScenarioResult {
+    const totalEvents = workers.reduce((sum, w) => sum + w.events, 0)
+    return {
+        scenario,
+        description,
+        durationMs,
+        workers,
+        aggregate: aggregateResults(workers, durationMs, totalEvents),
     }
 }
 
