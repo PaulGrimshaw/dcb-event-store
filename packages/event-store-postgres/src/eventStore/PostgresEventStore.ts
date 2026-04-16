@@ -24,7 +24,6 @@ import { analyseCommands } from "./analyseCommands.js"
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
 const COPY_THRESHOLD = 10_000
-const SP_BATCH_LIMIT = 500
 const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
 
@@ -149,29 +148,11 @@ export class PostgresEventStore implements EventStore {
         return this.appendBatch(commands)
     }
 
-    /** Stored procedure — single round-trip for small appends (≤ copyThreshold events). */
+    /** Stored procedure — single round-trip for single-command appends. */
     private async appendViaFunction(evts: DcbEvent[], condition?: AppendCondition): Promise<SequencePosition> {
         const lockKeys = this.lockStrategy.computeKeys(evts, condition)
-        const types: string[] = []
-        const tags: string[] = []
-        const payloads: string[] = []
-
-        for (const evt of evts) {
-            types.push(evt.type)
-            tags.push(evt.tags.values.join(TAG_DELIMITER))
-            payloads.push(serializePayload(evt))
-        }
-
-        const condTypes: string[] = []
-        const condTags: string[] = []
-        if (condition) {
-            for (const item of condition.failIfEventsMatch.items) {
-                for (const type of item.types ?? []) {
-                    condTypes.push(type)
-                    condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
-                }
-            }
-        }
+        const { types, tags, payloads } = serializeEvents(evts)
+        const { condTypes, condTags } = flattenSingleCondition(condition)
 
         try {
             const result = await this.pool.query(
@@ -197,34 +178,7 @@ export class PostgresEventStore implements EventStore {
 
     /** Stored procedure — single round-trip for batch commands with ≤ copyThreshold total events. */
     private async appendBatchViaFunction(commands: AppendCommand[], lockKeys: bigint[]): Promise<SequencePosition> {
-        const types: string[] = []
-        const tags: string[] = []
-        const payloads: string[] = []
-        const condCmdIdxs: number[] = []
-        const condTypes: string[] = []
-        const condTags: string[] = []
-        const condAfter: number[] = []
-
-        for (let i = 0; i < commands.length; i++) {
-            const cmd = commands[i]
-            for (const evt of ensureIsArray(cmd.events)) {
-                types.push(evt.type)
-                tags.push(evt.tags.values.join(TAG_DELIMITER))
-                payloads.push(serializePayload(evt))
-            }
-            if (cmd.condition) {
-                const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
-                for (const item of cmd.condition.failIfEventsMatch.items) {
-                    for (const type of item.types ?? []) {
-                        condCmdIdxs.push(i)
-                        condTypes.push(type)
-                        condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
-                        condAfter.push(afterPos)
-                    }
-                }
-            }
-        }
-
+        const { types, tags, payloads, condCmdIdxs, condTypes, condTags, condAfter } = serializeBatchCommands(commands)
         const hasConditions = condCmdIdxs.length > 0
 
         try {
@@ -264,9 +218,7 @@ export class PostgresEventStore implements EventStore {
             }
 
             await copyEventsToTable(client, this.tableName, evts)
-            const pos = await getLastPosition(client, this.tableName)
-            await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
-            return SequencePosition.fromString(String(pos))
+            return this.notifyAndReturnPosition(client)
         })
     }
 
@@ -275,7 +227,7 @@ export class PostgresEventStore implements EventStore {
         const { totalEvents, lockKeys, conditions, eventIterator } = analyseCommands(commands, this.lockStrategy)
         if (totalEvents === 0) throw new Error("Cannot append zero events")
 
-        if (commands.length <= SP_BATCH_LIMIT && totalEvents <= this.copyThreshold) {
+        if (totalEvents <= this.copyThreshold) {
             return this.appendBatchViaFunction(commands, lockKeys)
         }
 
@@ -283,20 +235,10 @@ export class PostgresEventStore implements EventStore {
             if (lockKeys.length > 0) await this.lockStrategy.acquire(client, lockKeys, this.tableName)
 
             const highWaterMark = await getHighWaterMark(client, this.tableName)
-
             await copyEventsToTable(client, this.tableName, eventIterator())
 
             if (conditions.length > 0) {
-                const condCmdIdxs: number[] = []
-                const condTypes: string[] = []
-                const condTags: string[] = []
-                const condAfter: number[] = []
-                for (const c of conditions) {
-                    condCmdIdxs.push(c.cmdIdx)
-                    condTypes.push(c.type)
-                    condTags.push(c.tags.join(TAG_DELIMITER))
-                    condAfter.push(c.afterPos)
-                }
+                const { condCmdIdxs, condTypes, condTags, condAfter } = flattenConditionRows(conditions)
                 const failedIdx = await checkConditionsCte(
                     client,
                     this.tableName,
@@ -310,10 +252,14 @@ export class PostgresEventStore implements EventStore {
                 if (failedIdx !== null) throw new AppendConditionError(commands[failedIdx].condition!, failedIdx)
             }
 
-            const pos = await getLastPosition(client, this.tableName)
-            await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
-            return SequencePosition.fromString(String(pos))
+            return this.notifyAndReturnPosition(client)
         })
+    }
+
+    private async notifyAndReturnPosition(client: PoolClient): Promise<SequencePosition> {
+        const pos = await getLastPosition(client, this.tableName)
+        await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
+        return SequencePosition.fromString(String(pos))
     }
 
     // ─── Transaction helper ─────────────────────────────────────────
@@ -336,4 +282,76 @@ export class PostgresEventStore implements EventStore {
 
 function serializePayload(evt: DcbEvent): string {
     return `{"data":${JSON.stringify(evt.data)},"metadata":${JSON.stringify(evt.metadata)}}`
+}
+
+function serializeEvents(evts: DcbEvent[]) {
+    const types: string[] = []
+    const tags: string[] = []
+    const payloads: string[] = []
+    for (const evt of evts) {
+        types.push(evt.type)
+        tags.push(evt.tags.values.join(TAG_DELIMITER))
+        payloads.push(serializePayload(evt))
+    }
+    return { types, tags, payloads }
+}
+
+function flattenSingleCondition(condition?: AppendCondition) {
+    const condTypes: string[] = []
+    const condTags: string[] = []
+    if (condition) {
+        for (const item of condition.failIfEventsMatch.items) {
+            for (const type of item.types ?? []) {
+                condTypes.push(type)
+                condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
+            }
+        }
+    }
+    return { condTypes, condTags }
+}
+
+function serializeBatchCommands(commands: AppendCommand[]) {
+    const types: string[] = []
+    const tags: string[] = []
+    const payloads: string[] = []
+    const condCmdIdxs: number[] = []
+    const condTypes: string[] = []
+    const condTags: string[] = []
+    const condAfter: number[] = []
+
+    for (let i = 0; i < commands.length; i++) {
+        const cmd = commands[i]
+        for (const evt of ensureIsArray(cmd.events)) {
+            types.push(evt.type)
+            tags.push(evt.tags.values.join(TAG_DELIMITER))
+            payloads.push(serializePayload(evt))
+        }
+        if (cmd.condition) {
+            const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
+            for (const item of cmd.condition.failIfEventsMatch.items) {
+                for (const type of item.types ?? []) {
+                    condCmdIdxs.push(i)
+                    condTypes.push(type)
+                    condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
+                    condAfter.push(afterPos)
+                }
+            }
+        }
+    }
+
+    return { types, tags, payloads, condCmdIdxs, condTypes, condTags, condAfter }
+}
+
+function flattenConditionRows(conditions: { cmdIdx: number; type: string; tags: string[]; afterPos: number }[]) {
+    const condCmdIdxs: number[] = []
+    const condTypes: string[] = []
+    const condTags: string[] = []
+    const condAfter: number[] = []
+    for (const c of conditions) {
+        condCmdIdxs.push(c.cmdIdx)
+        condTypes.push(c.type)
+        condTags.push(c.tags.join(TAG_DELIMITER))
+        condAfter.push(c.afterPos)
+    }
+    return { condCmdIdxs, condTypes, condTags, condAfter }
 }
