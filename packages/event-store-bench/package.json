@@ -1,0 +1,23 @@
+{
+    "name": "@dcb-es/event-store-bench",
+    "description": "Stress test and benchmark suite for all event store adapters",
+    "author": "Paul Grimshaw",
+    "license": "BSD-3-Clause",
+    "version": "0.1.0",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:pg": "vitest run -c vitest.pg.config.ts",
+        "test:pg-local": "vitest run -c vitest.pg-local.config.ts"
+    },
+    "devDependencies": {
+        "@dcb-es/event-store": "workspace:*",
+        "@dcb-es/event-store-postgres": "workspace:*",
+        "@testcontainers/postgresql": "^10.9.0",
+        "@types/pg": "^8.11.6",
+        "pg": "^8.11.5",
+        "testcontainers": "^10.9.0"
+    }
+}

@@ -1,10 +1,10 @@
 import { Pool } from "pg"
 import { DcbEvent, SequencePosition, Tags } from "@dcb-es/event-store"
-import { PostgresEventStore } from "../eventStore/PostgresEventStore"
-import { runHandler } from "./runHandler"
-import { waitUntilProcessed } from "./waitUntilProcessed"
-import { WaitTimeoutError } from "./WaitTimeoutError"
-import { ensureHandlersInstalled } from "./ensureHandlersInstalled"
+import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
+import { runHandler } from "./runHandler.js"
+import { waitUntilProcessed } from "./waitUntilProcessed.js"
+import { WaitTimeoutError } from "./WaitTimeoutError.js"
+import { ensureHandlersInstalled } from "./ensureHandlersInstalled.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const event = (type: string): DcbEvent => ({

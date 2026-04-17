@@ -1,6 +1,6 @@
 import { AppendCommand, DcbEvent, ensureIsArray } from "@dcb-es/event-store"
-import { LockStrategy } from "./lockStrategy"
-import { ConditionRow } from "./copyWriter"
+import { LockStrategy } from "./lockStrategy.js"
+import { ConditionRow } from "./copyWriter.js"
 
 /** Single pass over commands — extracts lock keys, conditions, and total event count. */
 export function analyseCommands(
@@ -26,13 +26,16 @@ export function analyseCommands(
         }
 
         if (cmd.condition) {
+            const afterPos = cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
             for (const item of cmd.condition.failIfEventsMatch.items) {
-                conditions.push({
-                    cmdIdx: i,
-                    types: item.types ?? [],
-                    tags: item.tags?.values ?? [],
-                    afterPos: cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
-                })
+                for (const type of item.types ?? []) {
+                    conditions.push({
+                        cmdIdx: i,
+                        type,
+                        tags: item.tags?.values ?? [],
+                        afterPos
+                    })
+                }
             }
         }
     }

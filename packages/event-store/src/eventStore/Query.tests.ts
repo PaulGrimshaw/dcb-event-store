@@ -1,5 +1,5 @@
-import { Query, QueryItem } from "./Query"
-import { Tags } from "./Tags"
+import { Query, QueryItem } from "./Query.js"
+import { Tags } from "./Tags.js"
 
 describe("Query", () => {
     test("should create query with 'All' type using Query.all", () => {

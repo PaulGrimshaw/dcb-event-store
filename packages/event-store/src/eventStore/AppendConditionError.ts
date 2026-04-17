@@ -1,4 +1,4 @@
-import { AppendCondition } from "./EventStore"
+import { AppendCondition } from "./EventStore.js"
 
 export class AppendConditionError extends Error {
     public readonly appendCondition: AppendCondition

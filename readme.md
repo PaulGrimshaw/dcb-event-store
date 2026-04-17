@@ -1,4 +1,4 @@
-# DCB Event Store
+# Kraken DCB EventStore
 
 A TypeScript implementation of the [Dynamic Consistency Boundary (DCB)](https://dcb.events) pattern for event sourcing, as specified by Sara Pellegrini and Bastian Waidelich at [dcb.events](https://dcb.events).
 

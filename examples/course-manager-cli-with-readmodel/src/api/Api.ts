@@ -2,7 +2,7 @@ import { buildDecisionModel, EventStore, SequencePosition } from "@dcb-es/event-
 import {
     PostgresCourseSubscriptionsRepository,
     STUDENT_SUBSCRIPTION_LIMIT
-} from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository"
+} from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
 import { Pool } from "pg"
 import {
     CourseWasRegisteredEvent,
@@ -11,7 +11,7 @@ import {
     StudentWasUnsubscribedEvent,
     CourseCapacityWasChangedEvent,
     CourseTitleWasChangedEvent
-} from "./Events"
+} from "./Events.js"
 
 import {
     CourseCapacity,
@@ -21,7 +21,7 @@ import {
     StudentAlreadyRegistered,
     StudentAlreadySubscribed,
     StudentSubscriptions
-} from "./DecisionModels"
+} from "./DecisionModels.js"
 import { waitUntilProcessed } from "@dcb-es/event-store-postgres"
 
 export const PROJECTION_NAME = "CourseProjection"

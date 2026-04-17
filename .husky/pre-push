@@ -1,0 +1,8 @@
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "🚫 Direct push to main blocked — use a PR."
+    exit 1
+  fi
+done
+
+pnpm run build && pnpm run lint && pnpm run test

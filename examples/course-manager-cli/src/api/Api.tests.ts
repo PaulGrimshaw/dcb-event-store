@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { Api } from "./Api"
+import { Api } from "./Api.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore } from "@dcb-es/event-store-postgres"
 

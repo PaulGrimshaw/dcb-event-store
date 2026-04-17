@@ -1,9 +1,9 @@
-import { AppendCondition, SequencedEvent, EventStore } from "../eventStore/EventStore"
-import { Query, QueryItem } from "../eventStore/Query"
-import { SequencePosition } from "../eventStore/SequencePosition"
-import { Tags } from "../eventStore/Tags"
-import { EventHandlerWithState } from "./EventHandlerWithState"
-import { matchTags } from "./matchTags"
+import { AppendCondition, SequencedEvent, EventStore } from "../eventStore/EventStore.js"
+import { Query, QueryItem } from "../eventStore/Query.js"
+import { SequencePosition } from "../eventStore/SequencePosition.js"
+import { Tags } from "../eventStore/Tags.js"
+import { EventHandlerWithState } from "./EventHandlerWithState.js"
+import { matchTags } from "./matchTags.js"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventHandlers = Record<string, EventHandlerWithState<any, any>>

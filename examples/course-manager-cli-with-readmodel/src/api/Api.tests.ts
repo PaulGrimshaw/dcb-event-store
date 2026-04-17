@@ -3,11 +3,11 @@ import {
     Course,
     installPostgresCourseSubscriptionsRepository,
     PostgresCourseSubscriptionsRepository
-} from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository"
-import { Api, PROJECTION_NAME } from "./Api"
+} from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
+import { Api, PROJECTION_NAME } from "./Api.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore, runHandler, ensureHandlersInstalled } from "@dcb-es/event-store-postgres"
-import { PostgresCourseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection"
+import { PostgresCourseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection.js"
 
 const COURSE_1 = {
     id: "course-1",

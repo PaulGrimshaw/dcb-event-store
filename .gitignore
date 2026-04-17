@@ -6,9 +6,13 @@ npm-debug.log
 *.log
 .npmrc
 package-lock.json
+yarn.lock
 coverage
 .nyc*
 *.d.ts
 *.d.ts.map
 *.js
 *.js.map
+.worktrees
+packages/*/LICENSE.md
+.sst

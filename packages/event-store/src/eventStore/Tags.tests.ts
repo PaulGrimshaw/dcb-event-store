@@ -1,4 +1,4 @@
-import { Tags } from "./Tags"
+import { Tags } from "./Tags.js"
 
 describe("Tags", () => {
     describe("from()", () => {

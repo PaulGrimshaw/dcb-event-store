@@ -1,4 +1,4 @@
-import { SequencedEvent } from "../eventStore/EventStore"
+import { SequencedEvent } from "../eventStore/EventStore.js"
 
 export const streamAllEventsToArray = async (generator: AsyncGenerator<SequencedEvent>): Promise<SequencedEvent[]> => {
     const results: SequencedEvent[] = []
