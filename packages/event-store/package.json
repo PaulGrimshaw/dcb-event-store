@@ -1,6 +1,6 @@
 {
     "name": "@dcb-es/event-store",
-    "version": "7.0.0-alpha.1",
+    "version": "7.0.0-alpha.2",
     "description": "Dynamic Consistency Boundary (DCB) event store for TypeScript — in-memory implementation, decision models, and tag-based querying",
     "type": "module",
     "license": "BSD-3-Clause",

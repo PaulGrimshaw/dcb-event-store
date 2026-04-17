@@ -43,12 +43,13 @@ describe("schema optimisations", () => {
             expect(result.rows[0].collation_name).toBe("C")
         })
 
-        test("no GIN index on tags (write throughput prioritised)", async () => {
+        test("GIN index on tags with fastupdate=off", async () => {
             const result = await pool.query(
-                `SELECT indexname FROM pg_indexes
+                `SELECT indexname, indexdef FROM pg_indexes
                  WHERE tablename = 'events' AND indexname = 'events_tags_gin'`
             )
-            expect(result.rows.length).toBe(0)
+            expect(result.rows.length).toBe(1)
+            expect(result.rows[0].indexdef).toContain("USING gin")
         })
 
         test("btree index on (type, sequence_position DESC) exists", async () => {

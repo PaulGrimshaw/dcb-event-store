@@ -1,5 +1,4 @@
 import { PoolClient } from "pg"
-import { AppendCondition } from "@dcb-es/event-store"
 
 /** MAX on BIGSERIAL PK is an index-only reverse scan — O(1). */
 export async function getHighWaterMark(client: PoolClient, tableName: string): Promise<number> {
@@ -16,59 +15,24 @@ export async function getLastPosition(client: PoolClient, tableName: string): Pr
 }
 
 /**
- * Check if any condition is violated by pre-existing events (before highWaterMark).
- * Uses the _conditions temp table populated by copyConditionsToTempTable.
+ * Check conditions via the _check_conditions stored function.
  * Returns the command index of the first violation, or null if all pass.
  */
-export async function checkBatchConditions(
+export async function checkConditions(
     client: PoolClient,
     tableName: string,
-    highWaterMark: number
+    condCmdIdxs: number[],
+    condTypes: string[],
+    condTags: string[],
+    condAfter: number[],
+    highWaterMark: number,
+    tagDelimiter: string
 ): Promise<number | null> {
+    const fnName = `${tableName}_check_conditions`
     const result = await client.query(
-        `SELECT cmd_idx FROM _conditions c
-         WHERE EXISTS (
-             SELECT 1 FROM ${tableName} e
-             WHERE e.type = ANY(c.cond_types)
-               AND e.tags @> c.cond_tags
-               AND e.sequence_position > c.after_pos
-               AND e.sequence_position <= $1
-         )
-         LIMIT 1`,
-        [highWaterMark]
+        `SELECT ${fnName}($1::int[], $2::text[], $3::text[], $4::bigint[], $5::bigint, $6::text) AS failed_idx`,
+        [condCmdIdxs, condTypes, condTags, condAfter, highWaterMark, tagDelimiter]
     )
-    return (result.rowCount ?? 0) > 0 ? result.rows[0].cmd_idx : null
-}
-
-/**
- * Check if a single condition is violated (used by the COPY path for single-command appends).
- * Returns true if violated.
- */
-export async function isConditionViolated(
-    client: PoolClient,
-    tableName: string,
-    condition: AppendCondition
-): Promise<boolean> {
-    const { failIfEventsMatch, after } = condition
-    const afterPos = after ? parseInt(after.toString()) : 0
-
-    for (const item of failIfEventsMatch.items) {
-        const clauses = [`sequence_position > $1`]
-        const params: unknown[] = [afterPos]
-        let idx = 2
-
-        if (item.types?.length) {
-            clauses.push(`type = ANY($${idx++}::text[])`)
-            params.push(item.types)
-        }
-        if (item.tags && item.tags.values.length > 0) {
-            clauses.push(`tags @> $${idx++}::text[]`)
-            params.push(item.tags.values)
-        }
-
-        const result = await client.query(`SELECT 1 FROM ${tableName} WHERE ${clauses.join(" AND ")} LIMIT 1`, params)
-        if ((result.rowCount ?? 0) > 0) return true
-    }
-
-    return false
+    const idx = result.rows[0].failed_idx
+    return idx !== null ? idx : null
 }
