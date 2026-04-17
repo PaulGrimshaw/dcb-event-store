@@ -1,620 +1,184 @@
 # Kraken DCB EventStore
 
-A TypeScript/Node.js implementation of the [Dynamic Consistency Boundary (DCB)](https://dcb.events) pattern. DCBs are a technique for enforcing consistency in event-driven systems without relying on rigid transactional boundaries -- establishing consistency requirements dynamically at runtime rather than at design time.
+A TypeScript implementation of the [Dynamic Consistency Boundary (DCB)](https://dcb.events) pattern for event sourcing, as specified by Sara Pellegrini and Bastian Waidelich at [dcb.events](https://dcb.events).
 
-Inspired by Sara Pellegrini's [Killing the Aggregate](https://sara.event-thinking.io/2023/04/kill-aggregate-chapter-1-I-am-here-to-kill-the-aggregate.html) blog series.
+In traditional event sourcing, aggregates define fixed consistency boundaries. When a business rule spans two aggregates — like limiting course enrolment while also capping how many courses a student can join — you're stuck choosing between large aggregates, sagas, or eventual consistency. DCBs solve this by defining the consistency boundary at runtime via a query, not a stream name. The scope is exactly as wide as the invariant requires.
 
-## Table of Contents
+> See the full [DCB specification](https://dcb.events/specification/) for the pattern definition.
 
-- [Packages](#packages)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Core Concepts](#core-concepts)
-- [API Reference](#api-reference)
-  - [EventStore](#eventstore)
-  - [DcbEvent](#dcbevent)
-  - [Tags](#tags)
-  - [Query](#query)
-  - [SequencePosition](#sequenceposition)
-  - [EventHandlerWithState](#eventhandlerwithstate)
-  - [EventHandler](#eventhandler)
-  - [buildDecisionModel](#builddecisionmodel)
-  - [MemoryEventStore](#memoryeventstore)
-  - [streamAllEventsToArray](#stremalleventsttoarray)
-  - [PostgresEventStore](#postgreseventstore)
-  - [HandlerCatchup](#handlercatchup)
-- [Usage Guide](#usage-guide)
-  - [Defining Events](#defining-events)
-  - [Defining Decision Models](#defining-decision-models)
-  - [Handling Commands](#handling-commands)
-  - [Projections with HandlerCatchup](#projections-with-handlercatchup)
-- [Examples](#examples)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Packages
-
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`@dcb-es/event-store`](./packages/event-store) | Core event store interface, in-memory implementation, and event handling | 5.1.3 |
-| [`@dcb-es/event-store-postgres`](./packages/event-store-postgres) | PostgreSQL-backed event store implementation | 6.2.1 |
-
-## Prerequisites
-
-- Node.js 18+
-- TypeScript 5+
-- PostgreSQL 14+ (for the Postgres implementation)
-- Familiarity with event sourcing concepts
-- Reading the [DCB specification and documentation](https://dcb.events) is strongly recommended
-
-## Installation
+## Install
 
 ```bash
-# Core package (includes MemoryEventStore)
-npm install @dcb-es/event-store
-
-# PostgreSQL implementation
-npm install @dcb-es/event-store-postgres
+npm install @dcb-es/event-store                # core abstractions + in-memory store
+npm install @dcb-es/event-store-postgres       # production Postgres adapter
 ```
 
-## Core Concepts
+## Usage
 
-### The Problem DCBs Solve
+### Define events
 
-Traditional event-sourced aggregates enforce consistency through partitioned event streams with optimistic version locking. This works until a business rule spans multiple entities -- for example, preventing a course from exceeding capacity while also limiting how many courses a student can join. With aggregates, you're forced into either a large aggregate, a saga, or accepting eventual consistency. Each option has significant trade-offs.
-
-DCBs address this by replacing static boundaries with **dynamic** ones. Rather than locking on a stream version, you lock on a **query**: "fail this append if any events matching this query have been added since I last read." This is query-based optimistic locking.
-
-### Tags
-
-A **tag** is a reference to a unique instance of a concept involved in a domain integrity rule. Tags are key-value pairs attached to events (e.g., `courseId=math-101`, `studentId=stu-1`) that enable custom partitioning of the event stream without requiring separate streams per entity.
-
-The precision of tag selection matters:
-- **Too few tags** -- you miss events that could violate a business rule
-- **Too many tags** -- you create unnecessary contention that blocks parallel processing
-
-A single event can carry multiple tags, making it relevant to multiple consistency boundaries simultaneously. For example, a `StudentSubscribedToCourse` event tagged with both `courseId` and `studentId` is relevant to both course-capacity rules and per-student subscription-limit rules.
-
-### Single Shared Event Stream
-
-Rather than one stream per aggregate instance, DCBs use a **single event stream per bounded context**. Events are filtered by type and/or tags as needed. This eliminates the need to decide stream partitioning up front.
-
-### Query-Based Optimistic Locking
-
-When appending, you pass the same query used to read events along with the **Sequence Position** of the last event you were aware of. The store atomically checks: if any events matching that query exist after that position, the append fails. This guarantees you made your decision on a consistent view of the relevant events.
-
-### Consistency Boundaries Are Dynamic
-
-Because the consistency scope is defined by the query rather than a stream name, you can compose multiple projections with different tag filters into a single decision model. The resulting consistency boundary spans all of them -- covering exactly the events relevant to the business rules you are enforcing, no more and no less.
-
-## API Reference
-
-### EventStore
-
-The core interface implemented by both `MemoryEventStore` and `PostgresEventStore`. Compliant with the [DCB specification](https://dcb.events/specification/).
-
-```typescript
-interface EventStore {
-    append(events: DcbEvent | DcbEvent[], condition?: AppendCondition): Promise<void>
-    read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent>
-}
-```
-
-**`append`** -- Atomically persists one or more events. When an `AppendCondition` is provided, the store fails if any events matching `failIfEventsMatch` exist after the specified position. Throws on condition violation.
-
-**`read`** -- Returns an async generator of `SequencedEvent`s matching the query, filtered by event type and/or tags.
-
-```typescript
-interface ReadOptions {
-    backwards?: boolean                     // Read in reverse order
-    fromPosition?: SequencePosition         // Start from this position
-    limit?: number                          // Max events to return
-}
-```
-
-### DcbEvent
-
-The base interface for all domain events.
-
-```typescript
-interface DcbEvent<
-    Tpe extends string = string,
-    Tgs = Tags,
-    Dta = unknown,
-    Mtdta = unknown
-> {
-    type: Tpe       // Event type identifier
-    tags: Tgs       // Tags referencing domain concepts involved in integrity rules
-    data: Dta       // Event payload
-    metadata: Mtdta // Optional metadata
-}
-```
-
-### SequencedEvent
-
-An event combined with the Sequence Position assigned by the store during append.
-
-```typescript
-interface SequencedEvent<T extends DcbEvent = DcbEvent> {
-    event: T
-    position: SequencePosition
-}
-```
-
-### AppendCondition
-
-Enforces consistency via query-based optimistic locking. The store fails the append if any events matching `failIfEventsMatch` exist after the given position.
-
-```typescript
-type AppendCondition = {
-    failIfEventsMatch: Query           // The query to check for conflicting events
-    after: SequencePosition            // Ignore events at or before this position
-}
-```
-
-### Tags
-
-Immutable key-value pairs that attach references to domain concepts to events. Tags enable precise, custom partitioning of the event stream for consistency enforcement and querying.
-
-```typescript
-// From an object (recommended)
-const tags = Tags.fromObj({ courseId: "math-101", studentId: "stu-1" })
-// Stored internally as ["courseId=math-101", "studentId=stu-1"]
-
-// From raw strings
-const tags = Tags.from(["courseId=math-101", "studentId=stu-1"])
-
-// Empty tags (no partitioning)
-const tags = Tags.createEmpty()
-
-// Properties
-tags.values             // string[] - the raw tag strings
-tags.length             // number
-tags.equals(otherTags)  // boolean
-```
-
-**Validation:** Each tag must match `key=value` where key and value are `[A-Za-z0-9-]+`. `fromObj` throws on empty objects.
-
-### Query
-
-Defines which events to read. A query is either "all events" or a set of `QueryItem` filters. Query Items are combined with **OR** logic; within a single item, type and tag criteria are combined with **AND** logic.
-
-```typescript
-// All events in the stream
-const query = Query.all()
-
-// Filtered query -- items are OR'd together
-const query = Query.fromItems([
-    { types: ["courseWasRegistered"], tags: Tags.fromObj({ courseId: "math-101" }) },
-    { types: ["studentWasSubscribed"], tags: Tags.fromObj({ courseId: "math-101" }) }
-])
-```
-
-```typescript
-interface QueryItem {
-    tags?: Tags           // Events must include all of these tags (subset match)
-    types?: string[]      // Events must be one of these types
-}
-```
-
-An event with tags `[courseId=math-101, studentId=stu-1]` matches a filter of `[courseId=math-101]` -- the filter is a subset of the event's tags.
-
-### SequencePosition
-
-A unique, monotonically increasing identifier assigned to each event by the store during append. Gaps in the sequence are allowed. Supports numeric coercion for comparisons.
-
-```typescript
-const pos = SequencePosition.create(5)
-const zero = SequencePosition.zero()
-
-pos.value    // 5
-pos.inc()    // SequencePosition(6)
-pos.plus(3)  // SequencePosition(8)
-
-// Numeric coercion works
-pos > zero   // true
-```
-
-**Validation:** Must be a non-negative integer.
-
-### EventHandlerWithState
-
-A projection used with `buildDecisionModel` to derive state from the event stream. Each handler defines which event types it handles, an optional tag filter to scope it to a specific entity instance, and a reducer function to accumulate state.
-
-```typescript
-interface EventHandlerWithState<TEvents extends DcbEvent, TState, TTags extends Tags = Tags> {
-    tagFilter?: Partial<TTags>  // Scope to events referencing this domain concept instance
-    onlyLastEvent?: boolean     // Declared in the interface but not currently used by buildDecisionModel
-    init: TState                // Initial state before any events
-    when: {
-        [EventType]: (sequencedEvent: SequencedEvent, state: TState) => TState | Promise<TState>
-    }
-}
-```
-
-Example -- tracking course capacity across multiple event types:
-
-```typescript
-const CourseCapacity = (courseId: string): EventHandlerWithState<
-    CourseWasRegistered | CourseCapacityWasChanged | StudentWasSubscribed | StudentWasUnsubscribed,
-    { subscriberCount: number; capacity: number }
-> => ({
-    tagFilter: Tags.fromObj({ courseId }),
-    init: { subscriberCount: 0, capacity: 0 },
-    when: {
-        courseWasRegistered: ({ event }) => ({
-            capacity: event.data.capacity,
-            subscriberCount: 0
-        }),
-        courseCapacityWasChanged: ({ event }, { subscriberCount }) => ({
-            subscriberCount,
-            capacity: event.data.newCapacity
-        }),
-        studentWasSubscribed: (_ev, { capacity, subscriberCount }) => ({
-            subscriberCount: subscriberCount + 1,
-            capacity
-        }),
-        studentWasUnsubscribed: (_ev, { capacity, subscriberCount }) => ({
-            subscriberCount: subscriberCount - 1,
-            capacity
-        })
-    }
-})
-```
-
-### EventHandler
-
-A stateless handler for projections and side effects -- used with `HandlerCatchup` to maintain read models asynchronously.
-
-```typescript
-interface EventHandler<TEvents extends DcbEvent, TTags extends Tags = Tags> {
-    tagFilter?: Partial<TTags>
-    onlyLastEvent?: boolean  // Declared in the interface but not currently used by HandlerCatchup
-    when: {
-        [EventType]: (sequencedEvent: SequencedEvent) => void | Promise<void>
-    }
-}
-```
-
-### buildDecisionModel
-
-The core function for command handling. Reads all events relevant to the provided handlers, applies them to build state, and returns the accumulated state together with an `AppendCondition` ready for use in the subsequent append.
-
-```typescript
-import { buildDecisionModel } from "@dcb-es/event-store"
-
-const { state, appendCondition } = await buildDecisionModel(eventStore, {
-    courseExists:           CourseExists(courseId),
-    courseCapacity:         CourseCapacity(courseId),
-    studentAlreadySubscribed: StudentAlreadySubscribed({ courseId, studentId }),
-    studentSubscriptions:   StudentSubscriptions(studentId)
-})
-
-// state keys match the handler names passed in
-// state.courseExists            -> boolean
-// state.courseCapacity          -> { subscriberCount: number, capacity: number }
-// state.studentAlreadySubscribed -> boolean
-// state.studentSubscriptions    -> { subscriptionCount: number }
-
-await eventStore.append(newEvent, appendCondition)
-```
-
-**How it works:**
-
-1. Collects each handler's event types and `tagFilter` into `QueryItem`s
-2. Issues a single combined `Query` (items OR'd together) to the event store
-3. For each Sequenced Event returned, routes it to every handler whose type and tag filter match
-4. Tracks the highest `SequencePosition` seen across all events
-5. Returns the final state map and an `AppendCondition` built from the combined query and that ceiling position
-
-The consistency boundary is determined dynamically by the set of handlers passed in. Composing handlers that reference different entity instances (e.g., a course *and* a student) creates a cross-entity consistency boundary without any additional ceremony.
-
-### MemoryEventStore
-
-An in-memory implementation of `EventStore` for testing and prototyping.
-
-```typescript
-import { MemoryEventStore } from "@dcb-es/event-store"
-
-const store = new MemoryEventStore()
-
-// Pre-seed with existing Sequenced Events
-const store = new MemoryEventStore(existingSequencedEvents)
-
-// Test helpers: register listeners for read/append calls
-store.on("read", () => readCount++)
-store.on("append", () => appendCount++)
-```
-
-### streamAllEventsToArray
-
-A utility to drain an async generator from `read()` into an array. Useful in tests or when you need all events in memory at once.
-
-```typescript
-import { streamAllEventsToArray } from "@dcb-es/event-store"
-
-const events = await streamAllEventsToArray(eventStore.read(Query.all()))
-```
-
-### PostgresEventStore
-
-A PostgreSQL-backed event store. Appends require **serializable transaction isolation** to guarantee the atomicity of the append-condition check.
-
-```typescript
-import { PostgresEventStore } from "@dcb-es/event-store-postgres"
-import { Pool } from "pg"
-
-const pool = new Pool({ connectionString: "postgres://..." })
-const eventStore = new PostgresEventStore(pool, {
-    postgresTablePrefix: "myapp" // Optional: table will be named "myapp_events"
-})
-
-// Create the events table (idempotent, safe to call on every startup)
-await eventStore.ensureInstalled()
-```
-
-**Appending requires a serializable transaction:**
-
-```typescript
-const client = await pool.connect()
-try {
-    await client.query("BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-    const txEventStore = new PostgresEventStore(client)
-    await txEventStore.append(events, appendCondition)
-    await client.query("COMMIT")
-} catch (e) {
-    await client.query("ROLLBACK")
-    throw e
-} finally {
-    client.release()
-}
-```
-
-Reads use cursor-based streaming (batches of 100) so large event streams are memory-efficient.
-
-### HandlerCatchup
-
-Manages catchup of `EventHandler` projections against the PostgreSQL event store, with bookmark-based checkpointing to resume from the last processed position.
-
-```typescript
-import { HandlerCatchup } from "@dcb-es/event-store-postgres"
-
-const catchup = new HandlerCatchup(pool, eventStore, "myapp") // table prefix is optional
-
-// Create bookmark rows for each handler (idempotent)
-await catchup.ensureInstalled(["courseProjection", "emailNotifier"])
-
-// Process all unhandled events for each handler
-await catchup.catchupHandlers({
-    courseProjection: myCourseProjectionHandler,
-    emailNotifier: myEmailHandler
-})
-```
-
-On each `catchupHandlers` call:
-
-1. Locks bookmark rows with `FOR UPDATE NOWAIT` -- fails immediately if another process holds the lock
-2. For each handler, reads events from its last checkpoint to the current store head
-3. Runs each Sequenced Event through the handler
-4. Updates bookmarks and releases locks atomically
-
-## Usage Guide
-
-### Defining Events
-
-Events implement `DcbEvent` with a literal string `type`, `tags` referencing the domain concepts involved in relevant integrity rules, a typed `data` payload, and optional `metadata`.
+Events carry **tags** — key-value references to the domain concepts they involve. Tags determine which consistency boundaries the event participates in. They are separate from the event's data payload: `data` is the business content, `tags` are the references the event store uses for filtering and scoped locking.
 
 ```typescript
 import { DcbEvent, Tags } from "@dcb-es/event-store"
 
-class CourseWasRegistered implements DcbEvent {
-    type: "courseWasRegistered" = "courseWasRegistered"
-    tags: Tags
-    data: { courseId: string; title: string; capacity: number }
-    metadata: unknown = {}
-
-    constructor(params: { courseId: string; title: string; capacity: number }) {
-        // Tag references the course concept -- events without this tag
-        // are not relevant to course-level integrity rules
-        this.tags = Tags.fromObj({ courseId: params.courseId })
-        this.data = params
-    }
-}
-
 class StudentWasSubscribed implements DcbEvent {
-    type: "studentWasSubscribed" = "studentWasSubscribed"
+    type = "studentWasSubscribed" as const
     tags: Tags
     data: { courseId: string; studentId: string }
-    metadata: unknown = {}
+    metadata = {}
 
-    constructor(params: { courseId: string; studentId: string }) {
-        // Tagged with both courseId and studentId -- this event is relevant
-        // to both course-capacity rules and per-student subscription-limit rules
-        this.tags = Tags.fromObj({ courseId: params.courseId, studentId: params.studentId })
-        this.data = params
+    constructor(courseId: string, studentId: string) {
+        // Tags reference the domain concepts involved in consistency rules.
+        // This event is tagged with both courseId and studentId because it
+        // participates in two boundaries: course capacity AND student limits.
+        this.tags = Tags.fromObj({ courseId, studentId })
+        this.data = { courseId, studentId }
     }
 }
 ```
 
-### Defining Decision Models
+### Define decision models
 
-Decision models are projections -- factory functions returning `EventHandlerWithState` -- that reconstruct the minimal state required to validate a command's business rules.
+Decision models are reducers scoped by one or more tags. They derive the state needed to validate a command.
 
 ```typescript
 import { EventHandlerWithState, Tags } from "@dcb-es/event-store"
 
-// Simple boolean check scoped to a single course
-const CourseExists = (courseId: string): EventHandlerWithState<
-    CourseWasRegistered,
-    boolean
-> => ({
-    tagFilter: Tags.fromObj({ courseId }),
-    init: false,
-    when: {
-        courseWasRegistered: () => true
-    }
-})
-
-// Capacity tracking across multiple event types
-const CourseCapacity = (courseId: string): EventHandlerWithState<
-    CourseWasRegistered | CourseCapacityWasChanged | StudentWasSubscribed | StudentWasUnsubscribed,
+// Scoped to a single courseId — only sees events tagged with this course
+const CourseCapacity = (courseId: string): EventHandlerWithState<any,
     { subscriberCount: number; capacity: number }
 > => ({
     tagFilter: Tags.fromObj({ courseId }),
     init: { subscriberCount: 0, capacity: 0 },
     when: {
-        courseWasRegistered: ({ event }) => ({
-            capacity: event.data.capacity,
-            subscriberCount: 0
-        }),
-        courseCapacityWasChanged: ({ event }, { subscriberCount }) => ({
-            subscriberCount,
-            capacity: event.data.newCapacity
-        }),
-        studentWasSubscribed: (_ev, { capacity, subscriberCount }) => ({
-            subscriberCount: subscriberCount + 1,
-            capacity
-        }),
-        studentWasUnsubscribed: (_ev, { capacity, subscriberCount }) => ({
-            subscriberCount: subscriberCount - 1,
-            capacity
-        })
+        courseWasRegistered: ({ event }) => ({ capacity: event.data.capacity, subscriberCount: 0 }),
+        studentWasSubscribed: (_, s) => ({ ...s, subscriberCount: s.subscriberCount + 1 }),
+        studentWasUnsubscribed: (_, s) => ({ ...s, subscriberCount: s.subscriberCount - 1 }),
     }
 })
 
-// onlyLastEvent is declared in the interface but not currently acted on by buildDecisionModel
-const NextStudentNumber = (): EventHandlerWithState<StudentWasRegistered, number> => ({
-    init: 1,
-    onlyLastEvent: true,
+// Scoped to a single studentId — sees all subscriptions for this student
+const StudentSubscriptions = (studentId: string): EventHandlerWithState<any,
+    { count: number }
+> => ({
+    tagFilter: Tags.fromObj({ studentId }),
+    init: { count: 0 },
     when: {
-        studentWasRegistered: ({ event }) => event.data.studentNumber + 1
+        studentWasSubscribed: (_, s) => ({ count: s.count + 1 }),
+        studentWasUnsubscribed: (_, s) => ({ count: s.count - 1 }),
     }
 })
 ```
 
-### Handling Commands
+### Handle a command
 
-Compose decision models with `buildDecisionModel`, enforce business rules against the derived state, and append events with the returned `appendCondition` to guarantee no conflicting events were added concurrently.
+Compose decision models with `buildDecisionModel`. It reads matching events, folds them through each handler, and returns the derived state plus an `AppendCondition` that protects the combined consistency boundary.
 
 ```typescript
-import { buildDecisionModel, EventStore } from "@dcb-es/event-store"
+import { buildDecisionModel } from "@dcb-es/event-store"
 
-async function subscribeStudentToCourse(
-    eventStore: EventStore,
-    cmd: { courseId: string; studentId: string }
-) {
-    const { courseId, studentId } = cmd
-
-    // The decision model spans two entity instances (course + student),
-    // forming a cross-entity consistency boundary dynamically
+async function subscribeToCourse(eventStore, courseId: string, studentId: string) {
     const { state, appendCondition } = await buildDecisionModel(eventStore, {
-        courseExists:             CourseExists(courseId),
-        courseCapacity:           CourseCapacity(courseId),
-        studentAlreadySubscribed: StudentAlreadySubscribed({ courseId, studentId }),
-        studentSubscriptions:     StudentSubscriptions(studentId)
+        capacity: CourseCapacity(courseId),
+        subscriptions: StudentSubscriptions(studentId),
     })
 
-    if (!state.courseExists)
-        throw new Error(`Course ${courseId} doesn't exist.`)
-    if (state.courseCapacity.subscriberCount >= state.courseCapacity.capacity)
-        throw new Error(`Course ${courseId} is full.`)
-    if (state.studentAlreadySubscribed)
-        throw new Error(`Student ${studentId} is already subscribed.`)
-    if (state.studentSubscriptions.subscriptionCount >= 5)
-        throw new Error(`Student ${studentId} has reached the subscription limit.`)
+    if (state.capacity.subscriberCount >= state.capacity.capacity)
+        throw new Error("Course is full")
+    if (state.subscriptions.count >= 5)
+        throw new Error("Student subscription limit reached")
 
-    // appendCondition encodes: "fail if any relevant event was added since I read"
-    await eventStore.append(
-        new StudentWasSubscribed({ courseId, studentId }),
-        appendCondition
-    )
+    await eventStore.append({
+        events: new StudentWasSubscribed(courseId, studentId),
+        condition: appendCondition,  // fails if any relevant event was added concurrently
+    })
 }
 ```
 
-The `appendCondition` covers the combined query of all four handlers. If any conflicting event (e.g., another subscription to the same course, a capacity change) was appended concurrently, the append fails. The caller should catch the error and retry from the top.
+The consistency boundary spans both the course _and_ the student — no aggregates, no sagas. If a concurrent write conflicts, `append` throws `AppendConditionError` and you retry from the top with fresh state.
 
-### Projections with HandlerCatchup
+### Use the store directly
 
-Use `EventHandler` with `HandlerCatchup` to maintain read models, sending notifications, or any other side-effects driven by events.
+The event handling layer (`buildDecisionModel`, `EventHandler`, etc.) is optional. The `EventStore` interface is three methods:
 
 ```typescript
-import { EventHandler } from "@dcb-es/event-store"
-import { HandlerCatchup } from "@dcb-es/event-store-postgres"
+const eventStore = new PostgresEventStore({ pool })
+await eventStore.ensureInstalled()
 
-const courseSubscriptionsProjection: EventHandler<
-    StudentWasSubscribed | StudentWasUnsubscribed
-> = {
-    when: {
-        studentWasSubscribed: async ({ event }) => {
-            await db.query(
-                "INSERT INTO course_subscriptions (course_id, student_id) VALUES ($1, $2)",
-                [event.data.courseId, event.data.studentId]
-            )
-        },
-        studentWasUnsubscribed: async ({ event }) => {
-            await db.query(
-                "DELETE FROM course_subscriptions WHERE course_id = $1 AND student_id = $2",
-                [event.data.courseId, event.data.studentId]
-            )
-        }
-    }
+// Append
+const position = await eventStore.append({
+    events: { type: "courseWasRegistered", tags: Tags.fromObj({ courseId: "cs101" }), data: { title: "CS 101", capacity: 30 }, metadata: {} }
+})
+
+// Read
+for await (const { event, position } of eventStore.read(Query.all())) {
+    console.log(event.type, position.toString())
 }
 
-const catchup = new HandlerCatchup(pool, eventStore)
-await catchup.ensureInstalled(["courseSubscriptions"])
-
-// Call after each append, or on a schedule, to keep the read model current
-await catchup.catchupHandlers({
-    courseSubscriptions: courseSubscriptionsProjection
-})
+// Subscribe (live stream via pg_notify)
+const controller = new AbortController()
+for await (const { event } of eventStore.subscribe(Query.all(), { signal: controller.signal })) {
+    console.log("New event:", event.type)
+}
 ```
 
-## Examples
+### Projections
 
-The repository includes two example CLI applications in the [`examples/`](./examples) directory, both implementing the [course subscriptions](https://dcb.events/examples/course-subscriptions/) example from dcb.events:
+Build read models with `runHandler` — a subscribe-based loop that atomically updates projections and bookmarks:
 
-### [course-manager-cli](./examples/course-manager-cli)
+```typescript
+import { runHandler, waitUntilProcessed, ensureHandlersInstalled } from "@dcb-es/event-store-postgres"
 
-Demonstrates the core DCB pattern: registering courses and students, updating course capacity and titles, and subscribing/unsubscribing students. All state is derived on-the-fly from the event stream via `buildDecisionModel` -- there are no separate read models.
+await ensureHandlersInstalled(pool, ["courseProjection"], "_handler_bookmarks")
 
-### [course-manager-cli-with-readmodel](./examples/course-manager-cli-with-readmodel)
+const { promise } = runHandler({
+    pool, eventStore,
+    handlerName: "courseProjection",
+    handlerFactory: (client) => ({
+        when: {
+            courseWasRegistered: async ({ event }) => {
+                await client.query("INSERT INTO courses (id, title) VALUES ($1, $2)",
+                    [event.data.courseId, event.data.title])
+            }
+        }
+    }),
+    signal: controller.signal,
+})
 
-Extends the above with a PostgreSQL-backed read model maintained by `HandlerCatchup` and `EventHandler` projections.
+// After appending, wait for the projection to catch up before querying
+const position = await eventStore.append({ events: newEvent, condition })
+await waitUntilProcessed(pool, "courseProjection", position)
+// Read model now reflects the event
+```
 
-Both examples require a running PostgreSQL instance.
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| [`@dcb-es/event-store`](https://www.npmjs.com/package/@dcb-es/event-store) | Core abstractions, decision model helpers, in-memory `MemoryEventStore` |
+| [`@dcb-es/event-store-postgres`](https://www.npmjs.com/package/@dcb-es/event-store-postgres) | Postgres adapter — optimised append strategies, advisory/row lock strategies, `pg_notify` subscriptions, handler infrastructure |
+
+## Documentation
+
+Full reference in [`docs/`](docs/index.md):
+
+- [Overview](docs/overview.md) — DCB pattern, architecture, data flow
+- [Getting Started](docs/getting-started.md) — setup, running examples, debugging
+- [Core API](docs/core/event-store-interface.md) — EventStore, Tags, Query, decision models
+- [Postgres Design](docs/postgres/design.md) — how the adapter implements DCBs: scoped locking, condition checking, append strategies
+- [Postgres API](docs/postgres/postgres-event-store.md) — PostgresEventStore, lock strategies, event handling
+- [Examples](docs/examples.md) — walkthrough of both CLI example apps
+- [Internals](docs/internals.md) — implementation details and design decisions
 
 ## Development
 
-This is a Lerna monorepo using Yarn workspaces.
-
 ```bash
-# Install dependencies
-yarn install
-
-# Build all packages
-yarn build
-
-# Run all tests
-yarn test
-
-# Run tests for a specific package
-cd packages/event-store && yarn test
-
-# Watch mode
-yarn watch
-
-# Lint
-yarn lint
-yarn lint-fix
+yarn install && npm run build && npm test
 ```
 
-The PostgreSQL package tests use [Testcontainers](https://node.testcontainers.org/) and require Docker.
-
-## Contributing
-
-Contributions are welcome via [issues](https://github.com/sennentech/dcb-event-sourced/issues), [pull requests](https://github.com/sennentech/dcb-event-sourced/pulls), or [discussions](https://github.com/sennentech/dcb-event-sourced/discussions).
+Docker required for Postgres tests. See [Getting Started](docs/getting-started.md).
 
 ## License
 
-[MIT](./LICENSE.md) -- Copyright 2023 Paul Grimshaw
+[MIT](./LICENSE.md)
