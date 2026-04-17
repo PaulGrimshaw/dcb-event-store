@@ -20,7 +20,8 @@
         "build": "tsc -p tsconfig.json",
         "watch": "tsc -w -p tsconfig.json",
         "lint": "eslint \"**/*.ts\" .",
-        "lint-fix": "eslint \"**/*.ts\" . --fix"
+        "lint-fix": "eslint \"**/*.ts\" . --fix",
+        "prepublishOnly": "test \"$CHANGESET_PUBLISH\" = '1' || (echo 'Use: pnpm run release (from repo root)' && exit 1)"
     },
     "keywords": [
         "event-sourcing",
