@@ -1,7 +1,12 @@
 import { Query, QueryItem, ReadOptions } from "@dcb-es/event-store"
 import { ParamManager } from "./utils.js"
 
-export const readSqlWithCursor = (query: Query, tableName: string, options?: ReadOptions) => {
+export interface ReadSqlOptions extends ReadOptions {
+    /** Upper bound on sequence_position. Used by the gap-safe barrier to cap reads. */
+    upperBound?: bigint | number
+}
+
+export const readSqlWithCursor = (query: Query, tableName: string, options?: ReadSqlOptions) => {
     const { sql, params } = readSql(query, tableName, options)
     const cursorName = `event_cursor_${Math.random().toString(36).substring(7)}`
     return {
@@ -11,10 +16,10 @@ export const readSqlWithCursor = (query: Query, tableName: string, options?: Rea
     }
 }
 
-const readSql = (query: Query, tableName: string, options?: ReadOptions) => {
+const readSql = (query: Query, tableName: string, options?: ReadSqlOptions) => {
     const pm = new ParamManager()
 
-    const filters = [positionFilterClause(pm, options)]
+    const filters = [positionFilterClause(pm, options), upperBoundClause(pm, options)]
 
     if (!query.isAll) {
         filters.push(criteriaClause(query, pm))
@@ -39,8 +44,13 @@ const notEmpty = (s: string): boolean => s !== null && s.trim() !== ""
 const tagsFilterClause = (pm: ParamManager, c: QueryItem): string =>
     c.tags && c.tags.length ? `tags && ${pm.add(c.tags.values)}::text[]` : ""
 
-const positionFilterClause = (pm: ParamManager, options?: ReadOptions): string =>
+const positionFilterClause = (pm: ParamManager, options?: ReadSqlOptions): string =>
     options?.after ? `e.sequence_position ${options.backwards ? "<" : ">"} ${pm.add(options.after.toString())}` : ""
+
+const upperBoundClause = (pm: ParamManager, options?: ReadSqlOptions): string =>
+    options?.upperBound !== undefined && !options.backwards
+        ? `e.sequence_position <= ${pm.add(options.upperBound.toString())}`
+        : ""
 
 const typesFilterClause = (c: QueryItem, pm: ParamManager): string =>
     c.types?.length ? `type IN (${c.types.map(t => pm.add(t)).join(", ")})` : ""

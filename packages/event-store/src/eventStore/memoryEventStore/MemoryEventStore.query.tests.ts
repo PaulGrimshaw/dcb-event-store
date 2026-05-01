@@ -110,14 +110,22 @@ describe("memoryEventStore.query", () => {
         describe("when filtered by tags", () => {
             test("should return no events when tag keys do not match", async () => {
                 const events = await streamAllEventsToArray(
-                    eventStore.read(Query.fromItems([{ types: [], tags: Tags.fromObj({ unmatchedId: "tag-key-1" }) }]))
+                    eventStore.read(
+                        Query.fromItems([
+                            { types: ["testEvent1", "testEvent2"], tags: Tags.fromObj({ unmatchedId: "tag-key-1" }) }
+                        ])
+                    )
                 )
                 expect(events.length).toBe(0)
             })
 
             test("should return the event matching specific tag key when read forward", async () => {
                 const events = await streamAllEventsToArray(
-                    eventStore.read(Query.fromItems([{ types: [], tags: Tags.fromObj({ testTagKey: "tag-key-1" }) }]))
+                    eventStore.read(
+                        Query.fromItems([
+                            { types: ["testEvent1", "testEvent2"], tags: Tags.fromObj({ testTagKey: "tag-key-1" }) }
+                        ])
+                    )
                 )
                 expect(events.length).toBe(1)
                 expect(events[0].event.tags.equals(Tags.fromObj({ testTagKey: "tag-key-1" }))).toEqual(true)

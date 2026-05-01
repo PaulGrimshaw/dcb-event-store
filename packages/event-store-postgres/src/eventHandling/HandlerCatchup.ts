@@ -117,7 +117,9 @@ export class HandlerCatchup {
             }
         }
 
-        const query = Query.fromItems([{ types: Object.keys(handler.when) as string[], tags: Tags.createEmpty() }])
+        const types = Object.keys(handler.when) as string[]
+        if (types.length === 0) return currentPosition
+        const query = Query.fromItems([{ types, tags: Tags.createEmpty() }])
         for await (const event of this.eventStore.read(query, { after: currentPosition })) {
             if (toSequencePosition && event.position.isAfter(toSequencePosition)) {
                 break

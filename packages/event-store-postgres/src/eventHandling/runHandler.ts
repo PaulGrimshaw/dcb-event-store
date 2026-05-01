@@ -56,9 +56,11 @@ export function runHandler(options: HandlerRunnerOptions): RunningHandler {
         }
         const types = Object.keys(sampleHandler.when) as string[]
         const query =
-            types.length > 0 && sampleHandler.tagFilter
-                ? Query.fromItems([{ types, tags: sampleHandler.tagFilter as Tags }])
-                : Query.all()
+            types.length === 0
+                ? Query.all()
+                : Query.fromItems([
+                      sampleHandler.tagFilter ? { types, tags: sampleHandler.tagFilter as Tags } : { types }
+                  ])
 
         for await (const event of eventStore.subscribe(query, { after: position, signal })) {
             if (signal?.aborted) break

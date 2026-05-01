@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 **Design notes:**
 
-- `sequence_position` is a `BIGSERIAL` primary key providing a gapless, monotonically increasing global order.
+- `sequence_position` is a `BIGSERIAL` primary key providing a monotonically increasing global order. Note that `BIGSERIAL` allocates values at INSERT time but rows only become visible at COMMIT, so concurrent writers can commit out of allocation order. See [design.md](design.md) for the read barrier that masks this from readers and subscribers.
 - `type` uses `COLLATE "C"` for byte-level equality -- faster than locale-aware collation and sufficient for event type strings.
 - `tags` is a `TEXT[]` array. There is no GIN index on tags — write throughput is prioritised over tag-filtered read speed. Tag filtering uses array operators (`@>`, `&&`) with sequential scans.
 - `payload` is opaque `TEXT` storing JSON with `data` and `metadata` fields. Stored as TEXT rather than JSONB because the event store never queries payload contents -- it only stores and retrieves.

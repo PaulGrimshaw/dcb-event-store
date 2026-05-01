@@ -8,11 +8,13 @@ export function analyseCommands(
     lockStrategy: LockStrategy
 ): {
     totalEvents: number
-    lockKeys: bigint[]
+    leafLockKeys: bigint[]
+    intentLockKeys: bigint[]
     conditions: ConditionRow[]
     eventIterator: () => Iterable<DcbEvent>
 } {
-    const allKeys = new Set<bigint>()
+    const leafSet = new Set<bigint>()
+    const intentSet = new Set<bigint>()
     const conditions: ConditionRow[] = []
     let totalEvents = 0
 
@@ -21,14 +23,14 @@ export function analyseCommands(
         const evts = ensureIsArray(cmd.events)
         totalEvents += evts.length
 
-        for (const k of lockStrategy.computeKeys(evts, cmd.condition)) {
-            allKeys.add(k)
-        }
+        const { leafX, intentS } = lockStrategy.computeWriterKeys(evts, cmd.condition)
+        for (const k of leafX) leafSet.add(k)
+        for (const k of intentS) intentSet.add(k)
 
         if (cmd.condition) {
             const afterPos = cmd.condition.after ? parseInt(cmd.condition.after.toString()) : 0
             for (const item of cmd.condition.failIfEventsMatch.items) {
-                for (const type of item.types ?? []) {
+                for (const type of item.types) {
                     conditions.push({
                         cmdIdx: i,
                         type,
@@ -42,7 +44,8 @@ export function analyseCommands(
 
     return {
         totalEvents,
-        lockKeys: [...allKeys],
+        leafLockKeys: [...leafSet],
+        intentLockKeys: [...intentSet],
         conditions,
         eventIterator: function* () {
             for (const cmd of commands) {

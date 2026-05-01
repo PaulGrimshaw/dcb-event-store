@@ -58,7 +58,7 @@ All events live in one table per bounded context. The schema is minimal:
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| `sequence_position` | `BIGSERIAL PK` | Global ordering — monotonic, gapless within a connection |
+| `sequence_position` | `BIGSERIAL PK` | Global ordering — monotonic. Values are allocated at INSERT and become visible at COMMIT, so concurrent writers can commit out of allocation order; the read barrier masks this from readers |
 | `type` | `TEXT` | Event type name |
 | `tags` | `TEXT[]` | Array of `"key=value"` tag strings |
 | `payload` | `TEXT` | JSON blob with `data` and `metadata` — opaque to the store |

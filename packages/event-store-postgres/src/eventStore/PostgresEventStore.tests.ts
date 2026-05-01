@@ -181,14 +181,13 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             ).rejects.toThrow("Query.all() is not supported")
         })
 
-        test("rejects conditions missing types", async () => {
-            const condition = {
-                failIfEventsMatch: Query.fromItems([{ tags: Tags.fromObj({ e: "1" }) }]),
-                after: SequencePosition.initial()
-            }
-            await expect(
-                store.append({ events: event("TestEvent", Tags.fromObj({ e: "1" })), condition })
-            ).rejects.toThrow("at least one type and one tag")
+        test("rejects QueryItems missing types at Query construction", () => {
+            // Query.fromItems now requires non-empty types on every item; tag-only
+            // filters are not supported (issue #89 — the read barrier needs a
+            // type-bound key to attach to).
+            expect(() => Query.fromItems([{ tags: Tags.fromObj({ e: "1" }) } as never])).toThrow(
+                "non-empty types array"
+            )
         })
 
         test("rejects conditions missing tags", async () => {
@@ -613,31 +612,8 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
         })
     })
 
-    // ─── TAG-ONLY QUERIES ───────────────────────────────────────────
-
-    describe("tag-only queries (no types filter)", () => {
-        test("reads events matching by tag only", async () => {
-            await store.append({ events: event("A", Tags.fromObj({ env: "prod" })) })
-            await store.append({ events: event("B", Tags.fromObj({ env: "prod" })) })
-            await store.append({ events: event("C", Tags.fromObj({ env: "staging" })) })
-            const events = await streamAllEventsToArray(
-                store.read(Query.fromItems([{ tags: Tags.fromObj({ env: "prod" }) }]))
-            )
-            expect(events.length).toBe(2)
-            expect(events[0].event.type).toBe("A")
-            expect(events[1].event.type).toBe("B")
-        })
-
-        test("tag-only query returns events across different types", async () => {
-            await store.append({ events: event("Order", Tags.from(["region=EU"])) })
-            await store.append({ events: event("Invoice", Tags.from(["region=EU"])) })
-            await store.append({ events: event("Order", Tags.from(["region=US"])) })
-            const events = await streamAllEventsToArray(
-                store.read(Query.fromItems([{ tags: Tags.from(["region=EU"]) }]))
-            )
-            expect(events.length).toBe(2)
-        })
-    })
+    // Tag-only queries were removed in issue #89 — see "condition validation"
+    // for the construction-level rejection. Use Query.all() or a typed filter.
 
     // ─── READ WITH LIMIT + FILTERS ──────────────────────────────────
 
@@ -679,11 +655,15 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
     // ─── TAG OVERLAP FILTER ─────────────────────────────────────────
 
     describe("tag overlap filtering", () => {
-        test("returns only events whose tags overlap with query tags", async () => {
+        test("returns only events whose tags overlap with query tags (typed filter)", async () => {
             await store.append({ events: event("A", Tags.from(["k=v1"])) })
             await store.append({ events: event("B", Tags.from(["k=v2"])) })
             await store.append({ events: event("C", Tags.from(["k=v1", "k=v2"])) })
-            const events = await streamAllEventsToArray(store.read(Query.fromItems([{ tags: Tags.from(["k=v1"]) }])))
+            // After issue #89, every QueryItem must declare types. Use the union of
+            // event types here to retain the original tag-overlap semantics.
+            const events = await streamAllEventsToArray(
+                store.read(Query.fromItems([{ types: ["A", "B", "C"], tags: Tags.from(["k=v1"]) }]))
+            )
             expect(events.length).toBe(2)
             expect(events[0].event.type).toBe("A")
             expect(events[1].event.type).toBe("C")
