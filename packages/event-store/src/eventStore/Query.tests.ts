@@ -40,4 +40,14 @@ describe("Query", () => {
         const query = Query.all()
         expect(() => query.items).toThrow("Cannot access items on 'All' query")
     })
+
+    test("should throw error when an item omits types (tag-only filter)", () => {
+        expect(() => Query.fromItems([{ tags: Tags.fromObj({ e: "1" }) } as unknown as QueryItem])).toThrow(
+            "non-empty types array"
+        )
+    })
+
+    test("should throw error when an item's types is an empty array", () => {
+        expect(() => Query.fromItems([{ types: [] }])).toThrow("non-empty types array")
+    })
 })

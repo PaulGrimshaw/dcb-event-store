@@ -3,11 +3,37 @@ import { LockStrategy } from "./lockStrategy.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 
+// Schema-migration mutex. The DROP+CREATE FUNCTION pair below is two non-atomic
+// DDL statements; concurrent callers could observe an in-flight writer
+// momentarily missing its SP. We hold a session-scoped advisory lock around the
+// migration so only one process runs the migration at a time. The lock key is a
+// constant unrelated to any content scope keyspace.
+const MIGRATION_LOCK_KEY = -89_001n
+
+const isPool = (poolOrClient: Pool | PoolClient): poolOrClient is Pool => "connect" in poolOrClient
+
 export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string, lockStrategy: LockStrategy) => {
     if (!VALID_IDENTIFIER.test(tableName))
         throw new Error(`Invalid table name "${tableName}": must match ${VALID_IDENTIFIER}`)
 
-    await pool.query(`
+    // Use a dedicated client so the advisory lock isn't returned to the pool
+    // between operations (pg_advisory_lock is session-scoped).
+    const acquiredClient = isPool(pool) ? await pool.connect() : null
+    const client: PoolClient | Pool = acquiredClient ?? pool
+    try {
+        await client.query("SELECT pg_advisory_lock($1::bigint)", [MIGRATION_LOCK_KEY])
+        try {
+            await runMigration(client, tableName, lockStrategy)
+        } finally {
+            await client.query("SELECT pg_advisory_unlock($1::bigint)", [MIGRATION_LOCK_KEY]).catch(() => {})
+        }
+    } finally {
+        acquiredClient?.release()
+    }
+}
+
+const runMigration = async (client: Pool | PoolClient, tableName: string, lockStrategy: LockStrategy) => {
+    await client.query(`
         CREATE TABLE IF NOT EXISTS ${tableName} (
           sequence_position BIGSERIAL PRIMARY KEY,
           type             TEXT COLLATE "C" NOT NULL,
@@ -25,9 +51,24 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
 
         CREATE INDEX IF NOT EXISTS ${tableName}_tags_gin
         ON ${tableName} USING GIN(tags) WITH (fastupdate=off);
+    `)
 
+    if (lockStrategy.ensureSchema) {
+        await lockStrategy.ensureSchema(client, tableName)
+    }
+
+    // Drop the old function signature before installing the new one (CREATE OR REPLACE
+    // refuses to change the parameter list).
+    await client.query(`DROP FUNCTION IF EXISTS ${tableName}_append(
+        bigint[], text[], text[], text[], int[], text[], text[], bigint[]
+    )`)
+
+    // The lock-then-allocate invariant is load-bearing for the read barrier. Locks
+    // (both leaf X and intent S) are acquired before any nextval/INSERT call.
+    await client.query(`
         CREATE OR REPLACE FUNCTION ${tableName}_append(
             p_lock_keys      bigint[],
+            p_intent_keys    bigint[],
             p_types          text[],
             p_tags           text[],
             p_payloads       text[],
@@ -41,7 +82,8 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
             v_pos    bigint;
             v_failed int;
         BEGIN
-            IF p_lock_keys IS NOT NULL AND array_length(p_lock_keys, 1) > 0 THEN
+            IF (p_lock_keys IS NOT NULL AND array_length(p_lock_keys, 1) > 0)
+               OR (p_intent_keys IS NOT NULL AND array_length(p_intent_keys, 1) > 0) THEN
                 ${lockStrategy.generateSpLockBlock(tableName)}
             END IF;
 
@@ -106,7 +148,7 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
         $fn$ LANGUAGE plpgsql;
     `)
 
-    await pool.query(`
+    await client.query(`
         CREATE OR REPLACE FUNCTION ${tableName}_check_conditions(
             p_cmd_idxs   int[],
             p_types      text[],
@@ -151,7 +193,26 @@ export const ensureInstalled = async (pool: Pool | PoolClient, tableName: string
         $cc$ LANGUAGE plpgsql;
     `)
 
-    if (lockStrategy.ensureSchema) {
-        await lockStrategy.ensureSchema(pool, tableName)
-    }
+    // Read barrier function. Acquires reader-side locks (S on leaf, X on intent),
+    // snapshots pg_sequence_last_value, returns it. Locks are xact-scoped to the
+    // implicit autocommit transaction wrapping this function call, so they are
+    // released as soon as the function returns. Caller must scan with
+    // sequence_position <= returned hwm — anything above is either uncommitted or
+    // newly allocated by writers that started after this barrier passed.
+    await client.query(`
+        CREATE OR REPLACE FUNCTION ${tableName}_barrier_hwm(
+            p_shared_keys    bigint[],
+            p_exclusive_keys bigint[]
+        ) RETURNS bigint AS $br$
+        DECLARE
+            v_hwm bigint;
+        BEGIN
+            ${lockStrategy.generateBarrierLockBlock(tableName)}
+
+            SELECT COALESCE(pg_sequence_last_value(pg_get_serial_sequence('${tableName}', 'sequence_position')), 0)
+            INTO v_hwm;
+            RETURN v_hwm;
+        END;
+        $br$ LANGUAGE plpgsql;
+    `)
 }

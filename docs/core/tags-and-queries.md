@@ -97,7 +97,7 @@ const allEvents = eventStore.read(Query.all())
 
 #### `Query.fromItems(queryItems: QueryItem[])`
 
-Creates a query from one or more `QueryItem`. Throws if the array is empty.
+Creates a query from one or more `QueryItem`. Throws if the array is empty, or if any item lacks a non-empty `types` array (tag-only filters are not supported; use `Query.all()` to match every event).
 
 ```ts
 const query = Query.fromItems([
@@ -120,7 +120,7 @@ const query = Query.fromItems([
 ```ts
 interface QueryItem {
   tags?: Tags
-  types?: string[]
+  types: string[]
 }
 ```
 

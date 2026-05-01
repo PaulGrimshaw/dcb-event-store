@@ -19,36 +19,55 @@ import { LockStrategy, advisoryLocks } from "./lockStrategy.js"
 import { copyEventsToTable } from "./copyWriter.js"
 import { getHighWaterMark, getLastPosition, checkConditions } from "./queries.js"
 import { analyseCommands } from "./analyseCommands.js"
+import { HwmCache } from "./hwmCache.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
 const COPY_THRESHOLD = 10_000
 const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
+const DEFAULT_HWM_CACHE_TTL_MS = 50
 
 export interface PostgresEventStoreOptions {
     pool: Pool
     tablePrefix?: string
     copyThreshold?: number
     lockStrategy?: LockStrategy
+    /**
+     * Time-to-live for the in-process read-barrier hwm cache. Coalesces concurrent
+     * `read()` / `subscribe()` calls with the same filter into a single barrier
+     * round-trip. Set to 0 to disable. Default: 50ms — readers can lag new commits
+     * by up to this many ms; correctness is unaffected.
+     */
+    hwmCacheTtlMs?: number
+    /**
+     * Hard cap on cached hwm entries (FIFO eviction). Default: 1024. Bounds the
+     * cache memory footprint when filters churn (per-entity reads, distinct
+     * tag values per request, etc.).
+     */
+    hwmCacheMaxEntries?: number
 }
 
 export class PostgresEventStore implements EventStore {
     private tableName: string
     private appendFunctionName: string
+    private barrierFunctionName: string
     private notifyChannel: string
     private pool: Pool
     private copyThreshold: number
     private lockStrategy: LockStrategy
+    private hwmCache: HwmCache
 
     constructor(options: PostgresEventStoreOptions) {
         this.pool = options.pool
         this.copyThreshold = options.copyThreshold ?? COPY_THRESHOLD
         this.lockStrategy = options.lockStrategy ?? advisoryLocks()
+        this.hwmCache = new HwmCache(options.hwmCacheTtlMs ?? DEFAULT_HWM_CACHE_TTL_MS, options.hwmCacheMaxEntries)
         this.tableName = options.tablePrefix ? `${options.tablePrefix}_events` : "events"
         if (!VALID_IDENTIFIER.test(this.tableName))
             throw new Error(`Invalid table name "${this.tableName}": must match ${VALID_IDENTIFIER}`)
         this.appendFunctionName = `${this.tableName}_append`
+        this.barrierFunctionName = `${this.tableName}_barrier_hwm`
         this.notifyChannel = this.tableName
     }
 
@@ -59,10 +78,14 @@ export class PostgresEventStore implements EventStore {
     // ─── Read ───────────────────────────────────────────────────────
 
     async *read(query: Query, options?: ReadOptions): AsyncGenerator<SequencedEvent> {
+        // Backwards reads have no gap problem: they scan from highest seq downwards,
+        // and the danger of skipping past in-flight allocations doesn't apply.
+        const upperBound = options?.backwards ? undefined : await this.barrierSnapshot(query)
+
         const client = await this.pool.connect()
         try {
             await client.query("BEGIN")
-            const { sql, params, cursorName } = readSqlWithCursor(query, this.tableName, options)
+            const { sql, params, cursorName } = readSqlWithCursor(query, this.tableName, { ...options, upperBound })
             await client.query(sql, params)
 
             let result: QueryResult
@@ -73,6 +96,27 @@ export class PostgresEventStore implements EventStore {
             await client.query("ROLLBACK").catch(() => {})
             client.release()
         }
+    }
+
+    /**
+     * Acquire reader-side barrier locks via the per-table SP, snapshot
+     * pg_sequence_last_value(), release. Returns the safe high-water mark.
+     *
+     * Implemented as a single autocommit function call so the barrier locks
+     * are held only for the duration of the function — they don't span the
+     * subsequent cursor scan, which keeps writers unblocked. Concurrent calls
+     * with the same filter are coalesced through `hwmCache`; the TTL bounds
+     * how stale a cached hwm may be (correctness is unaffected — see HwmCache).
+     */
+    private async barrierSnapshot(query: Query): Promise<bigint> {
+        const keys = this.lockStrategy.computeReaderKeys(query)
+        return this.hwmCache.get(keys, async () => {
+            const result = await this.pool.query(
+                `SELECT ${this.barrierFunctionName}($1::bigint[], $2::bigint[]) AS hwm`,
+                [keys.leafS, keys.intentX]
+            )
+            return BigInt(String(result.rows[0].hwm ?? "0"))
+        })
     }
 
     // ─── Subscribe ──────────────────────────────────────────────────
@@ -108,6 +152,9 @@ export class PostgresEventStore implements EventStore {
                     const onNotification = () => {
                         clearTimeout(timeout)
                         signal?.removeEventListener("abort", onAbort)
+                        // A NOTIFY means a writer (here or on another instance) committed.
+                        // Invalidate so the next iteration's barrier picks up the new state.
+                        this.hwmCache.invalidateAll()
                         resolve()
                     }
                     const onAbort = () => {
@@ -133,24 +180,36 @@ export class PostgresEventStore implements EventStore {
             if (cmd.condition) validateAppendCondition(cmd.condition)
         }
 
-        const { totalEvents, lockKeys, conditions, eventIterator } = analyseCommands(commands, this.lockStrategy)
+        const { totalEvents, leafLockKeys, intentLockKeys, conditions, eventIterator } = analyseCommands(
+            commands,
+            this.lockStrategy
+        )
         if (totalEvents === 0) throw new Error("Cannot append zero events")
 
-        return totalEvents <= this.copyThreshold
-            ? this.appendViaFunction(commands, lockKeys)
-            : this.appendViaCopy(commands, lockKeys, conditions, eventIterator)
+        const result = await (totalEvents <= this.copyThreshold
+            ? this.appendViaFunction(commands, leafLockKeys, intentLockKeys)
+            : this.appendViaCopy(commands, leafLockKeys, intentLockKeys, conditions, eventIterator))
+        // We just committed new events; any cached hwm in this process is now stale.
+        // Cross-instance staleness is handled by subscribers invalidating on NOTIFY.
+        this.hwmCache.invalidateAll()
+        return result
     }
 
     /** Stored procedure — single round-trip for ≤ copyThreshold total events. */
-    private async appendViaFunction(commands: AppendCommand[], lockKeys: bigint[]): Promise<SequencePosition> {
+    private async appendViaFunction(
+        commands: AppendCommand[],
+        leafLockKeys: bigint[],
+        intentLockKeys: bigint[]
+    ): Promise<SequencePosition> {
         const { types, tags, payloads, condCmdIdxs, condTypes, condTags, condAfter } = serializeCommands(commands)
         const hasConditions = condCmdIdxs.length > 0
 
         try {
             const result = await this.pool.query(
-                `SELECT ${this.appendFunctionName}($1::bigint[], $2::text[], $3::text[], $4::text[], $5::int[], $6::text[], $7::text[], $8::bigint[]) as pos`,
+                `SELECT ${this.appendFunctionName}($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::text[], $9::bigint[]) as pos`,
                 [
-                    lockKeys,
+                    leafLockKeys,
+                    intentLockKeys,
                     types,
                     tags,
                     payloads,
@@ -175,12 +234,18 @@ export class PostgresEventStore implements EventStore {
     /** COPY FROM STDIN — high throughput for > copyThreshold total events. */
     private async appendViaCopy(
         commands: AppendCommand[],
-        lockKeys: bigint[],
+        leafLockKeys: bigint[],
+        intentLockKeys: bigint[],
         conditions: { cmdIdx: number; type: string; tags: string[]; afterPos: number }[],
         eventIterator: () => Iterable<DcbEvent>
     ): Promise<SequencePosition> {
         return this.withTransaction(async client => {
-            if (lockKeys.length > 0) await this.lockStrategy.acquire(client, lockKeys, this.tableName)
+            // Lock-then-allocate invariant: acquire leaf X + intent S BEFORE INSERT.
+            await this.lockStrategy.acquireWriter(
+                client,
+                { leafX: leafLockKeys, intentS: intentLockKeys },
+                this.tableName
+            )
 
             const highWaterMark = await getHighWaterMark(client, this.tableName)
             await copyEventsToTable(client, this.tableName, eventIterator())
@@ -251,7 +316,7 @@ function serializeCommands(commands: AppendCommand[]) {
         if (cmd.condition) {
             const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
             for (const item of cmd.condition.failIfEventsMatch.items) {
-                for (const type of item.types ?? []) {
+                for (const type of item.types) {
                     condCmdIdxs.push(i)
                     condTypes.push(type)
                     condTags.push(item.tags?.values.join(TAG_DELIMITER) ?? "")
