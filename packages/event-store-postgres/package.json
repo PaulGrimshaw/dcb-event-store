@@ -46,7 +46,7 @@
         "dist"
     ],
     "dependencies": {
-        "@dcb-es/event-store": "^7.0.0-alpha.2",
+        "@dcb-es/event-store": "workspace:*",
         "pg": "^8.11.5",
         "pg-copy-streams": "^7.0.0"
     },

@@ -170,8 +170,8 @@ importers:
   packages/event-store-postgres:
     dependencies:
       '@dcb-es/event-store':
-        specifier: ^7.0.0-alpha.2
-        version: 7.0.0-alpha.2
+        specifier: workspace:*
+        version: link:../event-store
       pg:
         specifier: ^8.11.5
         version: 8.20.0
@@ -269,10 +269,6 @@ packages:
 
   '@dcb-es/event-store@7.0.0-alpha.1':
     resolution: {integrity: sha512-vQSOo/7vQMg3WHPm5WCJHzXM5N+/nrczDk4kyB4dDjZvettkIlvWbVR3OPfIoMTbyAZOxoPHRk83TzfyKUn73Q==}
-
-  '@dcb-es/event-store@7.0.0-alpha.2':
-    resolution: {integrity: sha512-/LSO9q062QgRgJx8gIk6dEOq/8IpdWsXFnv3FNafeNCCGNsw5MaWqxa9ZHY3VN70kjPnmIKxov6XJURIv2vQXg==}
-    engines: {node: '>=18'}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -2481,10 +2477,6 @@ snapshots:
       - pg-native
 
   '@dcb-es/event-store@7.0.0-alpha.1':
-    dependencies:
-      uuid: 9.0.1
-
-  '@dcb-es/event-store@7.0.0-alpha.2':
     dependencies:
       uuid: 9.0.1
 
