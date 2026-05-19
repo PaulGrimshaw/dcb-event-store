@@ -1,0 +1,15 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "@dcb-es/examples-course-manager-cli": "2.2.1",
+    "@dcb-es/examples-course-manager-cli-with-readmodel": "2.2.1",
+    "@dcb-es/event-store": "7.0.0-alpha.2",
+    "@dcb-es/event-store-bench": "0.1.0",
+    "@dcb-es/event-store-postgres": "7.0.0-alpha.2"
+  },
+  "changesets": [
+    "postgres-gap-barrier",
+    "proud-ravens-do"
+  ]
+}

@@ -3,7 +3,7 @@
     "description": "Postgres adapter for @dcb-es/event-store — persistent DCB event store with optimistic concurrency and tag-based querying",
     "author": "Paul Grimshaw",
     "license": "BSD-3-Clause",
-    "version": "7.0.0-alpha.2",
+    "version": "7.0.0-alpha.3",
     "type": "module",
     "exports": {
         ".": {

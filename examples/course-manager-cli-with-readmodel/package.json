@@ -15,8 +15,8 @@
         "lint-fix": "eslint \"**/*.ts\" . --fix"
     },
     "dependencies": {
-        "@dcb-es/event-store": "^7.0.0-alpha.1",
-        "@dcb-es/event-store-postgres": "^7.0.0-alpha.1",
+        "@dcb-es/event-store": "workspace:*",
+        "@dcb-es/event-store-postgres": "workspace:*",
         "inquirer": "^8.0.0",
         "interactive-cli": "^1.1.6",
         "pg": "^8.20.0"
