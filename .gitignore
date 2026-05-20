@@ -15,4 +15,5 @@ coverage
 *.js.map
 .worktrees
 packages/*/LICENSE.md
+packages/*/README.md
 .sst
